@@ -9,6 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
+    "@tanstack/react-virtual": "^3.14.9",
+    "bootstrap-icons": "^1.13.1",
+    "chart.js": "^4.5.1",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"

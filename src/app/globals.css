@@ -3,24 +3,59 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Panel grid / border variables (light defaults) */
+  --border: #E5E5E5;
+  --border-3: rgba(212, 212, 212, 0.5);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: var(--font-syne), var(--font-dm-sans), sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --border: #262626;
+    --border-3: rgba(38, 38, 38, 0.5);
   }
+}
+
+/* Panel theme overrides */
+[data-theme="dark"] {
+  --border: #262626;
+  --border-3: rgba(38, 38, 38, 0.5);
+}
+
+[data-theme="light"] {
+  --border: #E5E5E5;
+  --border-3: rgba(212, 212, 212, 0.5);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-soft);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
 }
