@@ -68,6 +68,13 @@
   position: relative;
 }
 
+/* Hide monetary values */
+.values-hidden .font-mono {
+  filter: blur(6px);
+  user-select: none;
+  transition: filter .2s;
+}
+
 .panel-layout::before {
   content: '';
   position: fixed;
@@ -104,6 +111,10 @@
   background: var(--card);
   border: 1px solid var(--border);
   color: var(--text-2);
+}
+
+button {
+  cursor: pointer;
 }
 
 .btn-ghost:hover {

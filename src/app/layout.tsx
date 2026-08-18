@@ -28,11 +28,14 @@ export const metadata: Metadata = {
   title: "Rubra Cash — Gestão Financeira Inteligente",
   description: "Controle financeiro pessoal inteligente com Inteligência Artificial",
   manifest: "/manifest.json",
-  themeColor: "#080810",
   appleWebApp: {
     title: "Rubra Cash",
     statusBarStyle: "black-translucent",
   }
+};
+
+export const viewport = {
+  themeColor: "#080810",
 };
 
 export default function RootLayout({
@@ -45,6 +48,7 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${dmSans.variable} ${jetbrainsMono.variable} ${syne.variable} h-full antialiased`}
       data-theme="dark"
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-[#0A0A0A] text-[#F0F0F0]">
         <UIProvider>

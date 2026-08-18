@@ -165,7 +165,7 @@ export default function LandingPage() {
       <Script src="/animations/categoriesFlow.js" strategy="lazyOnload" />
       <Script src="/animations/aiNotesFlow.js" strategy="lazyOnload" />
 
-      <div data-theme={theme} style={{ fontFamily: 'var(--sans)', background: 'var(--bg)', color: 'var(--ink)' }}>
+      <div data-theme={theme} style={{ fontFamily: 'var(--sans)', background: 'var(--bg)', color: 'var(--ink)' }} suppressHydrationWarning>
 
         {/* ── HEADER ──────────────────────────────────────── */}
         <header className="lp-header">
@@ -299,7 +299,7 @@ export default function LandingPage() {
                       { key: 'categories', icon: '🏷️', label: 'Categorias' },
                       { key: 'ai', icon: '🧠', label: 'Notas para IA' },
                     ].map(({ key, icon, label }) => (
-                      <button key={key} id={`int-nav-${key}`} className="int-nav-item"
+                      <button key={key} id={`int-nav-${key}`} className={`int-nav-item${key === 'upload' ? ' active' : ''}`}
                         onClick={() => {
                           if (typeof (window as any).switchIntDemo === 'function') {
                             (window as any).switchIntDemo(key);

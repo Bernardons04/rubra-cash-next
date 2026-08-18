@@ -79,7 +79,19 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const userTriggerRef = useRef<HTMLButtonElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close menus on click outside (user menu) – removed for simplicity; menu will stay open until user toggles it again.
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        userTriggerRef.current && !userTriggerRef.current.contains(e.target as Node) &&
+        userMenuRef.current && !userMenuRef.current.contains(e.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userMenuOpen]);
 
 
   if (loading) {
@@ -116,107 +128,119 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
 
       <div className="panel-content-wrapper flex min-h-screen duration-200">
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && isMobile && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm transition-opacity duration-200"
-        />
-      )}
+        {/* Mobile Sidebar Overlay */}
+        {sidebarOpen && isMobile && (
+          <div
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm transition-opacity duration-200"
+          />
+        )}
 
-      {/* Sidebar */}
-      <aside
-        className={`aside-sidebar fixed top-0 bottom-0 left-0 z-40 flex flex-col border-r bg-[var(--surface)] border-[var(--border)] transition-all duration-200 ease-in-out text-[var(--text)]
+        {/* Sidebar */}
+        <aside
+          className={`aside-sidebar fixed top-0 bottom-0 left-0 z-40 flex flex-col border-r bg-[var(--surface)] border-[var(--border)] transition-all duration-200 ease-in-out text-[var(--text)]
           ${isMobile ? (sidebarOpen ? 'translate-x-0 w-[var(--sidebar-w)]' : '-translate-x-full w-[var(--sidebar-w)]') : (sidebarOpen ? 'w-[var(--sidebar-w)]' : 'w-[var(--sidebar-collapsed)]')}`}
-      >
-        {/* Logo Section */}
-        <div className={`flex h-[65px] shrink-0 items-center justify-between border-b px-4 border-[var(--border)]`}>
-          {(sidebarOpen || isMobile) ? (
-            <>
-              <Link href="/panel/dashboard" className="flex items-center gap-2 font-extrabold tracking-tight">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[#a84551]" />
-                <span className="text-lg">Rubra</span>
-                <span className="rounded-full bg-[#a84551] px-2 py-0.5 text-[10px] font-bold text-white">Cash</span>
-              </Link>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className={`cursor-pointer flex h-7 w-7 items-center justify-center rounded-sm border text-[var(--text-3)] hover:text-[var(--text)] border-[var(--border)] hover:bg-[var(--card-hover)]`}
-              >
-                <i className="bi bi-x-lg text-xs" />
-              </button>
-            </>
-          ) : (
+        >
+          {/* Floating edge toggle — desktop only */}
+          {!isMobile && (
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-3)] hover:text-[var(--accent)]"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              title={sidebarOpen ? 'Recolher menu' : 'Expandir menu'}
+              className="absolute top-[52px] -right-[13px] z-50 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-sm border bg-[var(--surface)] text-[var(--text-2)] shadow-md transition-all duration-200 border-[var(--border)] hover:text-[var(--accent)] hover:border-[var(--accent)] hover:shadow-[0_0_0_3px_var(--accent-dim)]"
             >
-              <div className="flex items-center cursor-pointer gap-1 font-extrabold text-lg">
-                <span className="h-2 w-2 rounded-full bg-[#a84551]" />
-                <span className="text-[var(--text)]">R</span>
-              </div>
+              <i className={`bi ${sidebarOpen ? 'bi-chevron-left' : 'bi-chevron-right'} text-[10px]`} />
             </button>
           )}
-        </div>
 
-        {/* Navigation Items */}
-        <nav className="flex-1 space-y-1 p-3 px-[10px]">
-          {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                onClick={() => isMobile && setSidebarOpen(false)}
-                className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[13px] font-medium transition-all duration-150
-                  ${!sidebarOpen && !isMobile ? 'justify-center' : ''}
-                  ${isActive 
-                    ? 'bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)] border' 
-                    : 'border border-transparent text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]'}
-                  `}title={!sidebarOpen && !isMobile ? item.label : ''}
+          {/* Logo Section */}
+          <div className={`flex h-[65px] shrink-0 items-center justify-between border-b px-4 border-[var(--border)]`}>
+            {(sidebarOpen || isMobile) ? (
+              <>
+                <Link href="/panel/dashboard" className="flex items-center gap-2 font-extrabold tracking-tight">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#a84551]" />
+                  <span className="text-lg">Rubra</span>
+                  <span className="rounded-full bg-[#a84551] px-2 py-0.5 text-[10px] font-bold text-white">Cash</span>
+                </Link>
+                {isMobile && (
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className={`cursor-pointer flex h-7 w-7 items-center justify-center rounded-sm border text-[var(--text-3)] hover:text-[var(--text)] border-[var(--border)] hover:bg-[var(--card-hover)]`}
+                  >
+                    <i className="bi bi-x-lg text-xs" />
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-3)] hover:text-[var(--accent)]"
               >
-                <i className={`bi ${item.icon} text-lg shrink-0`} />
-                {(sidebarOpen || isMobile) && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
-        </nav>
+                <div className="flex items-center cursor-pointer gap-1 font-extrabold text-lg">
+                  <span className="h-2 w-2 rounded-full bg-[#a84551]" />
+                  <span className="text-[var(--text)]">R</span>
+                </div>
+              </button>
+            )}
+          </div>
 
-        {/* Sidebar Footer (User details & Options) */}
-        <div className={`border-t p-3 px-[10px] border-[var(--border)]`}>
-          <div className="relative">
-            <button
-              ref={userTriggerRef}
-              onClick={(e) => {
-                e.stopPropagation();
-                setUserMenuOpen(!userMenuOpen);
-              }}
-              className={`flex w-full items-center gap-3 rounded-xl cursor-pointer border p-2 text-left border-[var(--border)] hover:bg-[var(--card-hover)]
+          {/* Navigation Items */}
+          <nav className="flex-1 space-y-1 p-3 px-[10px]">
+            {NAV_ITEMS.map((item) => {
+              const isActive = pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  onClick={() => isMobile && setSidebarOpen(false)}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[13px] font-medium transition-all duration-150
+                  ${!sidebarOpen && !isMobile ? 'justify-center' : ''}
+                  ${isActive
+                      ? 'bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)] border'
+                      : 'border border-transparent text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]'}
+                  `} title={!sidebarOpen && !isMobile ? item.label : ''}
+                >
+                  <i className={`bi ${item.icon} text-lg shrink-0`} />
+                  {(sidebarOpen || isMobile) && <span>{item.label}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Sidebar Footer (User details & Options) */}
+          <div className={`border-t p-3 px-[10px] border-[var(--border)]`}>
+            <div className="relative">
+              <button
+                ref={userTriggerRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setUserMenuOpen(!userMenuOpen);
+                }}
+                className={`flex w-full items-center gap-2 rounded-xl cursor-pointer border p-2 text-left border-[var(--border)] hover:bg-[var(--card-hover)]
                 ${!sidebarOpen && !isMobile ? 'justify-center' : ''}`}
-            >
-              {userAvatar ? (
-                <img src={userAvatar} alt={userName} className="h-[36px] w-[36px] shrink-0 rounded-[10px] object-cover" />
-              ) : (
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-sm font-bold bg-[var(--surface)] border-[var(--border)] text-[var(--text-2)]`}>
-                  <i className="bi bi-person-fill" />
-                </div>
-              )}
-              {(sidebarOpen || isMobile) && (
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-semibold">{userName}</p>
-                  <p className="truncate text-[11px] text-[var(--text-3)]">{userEmail}</p>
-                </div>
-              )}
-              {(sidebarOpen || isMobile) && (
-                <i className={`bi bi-chevron-up ml-auto text-xs text-[var(--text-3)] transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`} />
-              )}
-            </button>
+              >
+                {userAvatar ? (
+                  <img src={userAvatar} alt={userName} className="h-[36px] w-[36px] shrink-0 rounded-[10px] object-cover" />
+                ) : (
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-sm font-bold bg-[var(--surface)] border-[var(--border)] text-[var(--text-2)]`}>
+                    <i className="bi bi-person-fill" />
+                  </div>
+                )}
+                {(sidebarOpen || isMobile) && (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-semibold">{userName}</p>
+                    <p className="truncate text-[12px] text-[var(--text-3)]">{userEmail}</p>
+                  </div>
+                )}
+                {(sidebarOpen || isMobile) && (
+                  <i className={`bi bi-chevron-up ml-auto text-xs text-[var(--text)] transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-            {/* Dropup Menu */}
-            <div
-              ref={userMenuRef}
-              className={`absolute bottom-full left-0 z-100 mb-1 ${sidebarOpen ? 'w-full' : 'w-60'} rounded-sm border p-[2px] shadow-xl bg-[var(--surface)] border-[var(--border)] text-[var(--text-2)] transition-all duration-200 ${
-                userMenuOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-[10px] pointer-events-none'
-              }`}>
+              {/* Dropup Menu */}
+              <div
+                ref={userMenuRef}
+                className={`absolute bottom-full left-0 z-100 mb-1 ${sidebarOpen ? 'w-full' : 'w-60'} rounded-sm border p-[2px] shadow-xl bg-[var(--surface)] border-[var(--border)] text-[var(--text-2)] transition-all duration-200 ${userMenuOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-[10px] pointer-events-none'
+                  }`}>
                 <button
                   onClick={toggleValuesHidden}
                   className={`flex w-full items-center cursor-pointer justify-between rounded-md px-3 py-2.5 text-left text-[13px] hover:bg-[var(--card-hover)] hover:text-[var(--text)]`}
@@ -279,38 +303,38 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                   Sair
                 </button>
               </div>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Main Content Area */}
-      <div className={`flex min-w-0 flex-1 flex-col transition-all duration-200 ease-in-out
+        {/* Main Content Area */}
+        <div className={`flex min-w-0 flex-1 flex-col transition-all duration-200 ease-in-out
         ${isMobile ? 'ml-0' : (sidebarOpen ? 'ml-[var(--sidebar-w)]' : 'ml-[var(--sidebar-collapsed)]')}`}
-      >
-        {/* Header */}
-        <header className={`sticky top-0 z-20 flex h-[65px] items-center justify-between border-b px-6 bg-[var(--surface)] border-[var(--border)]`}
         >
-          <div className="flex items-center gap-4">
-            {isMobile && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className={`flex h-9 w-9 items-center justify-center rounded-sm border text-[var(--text-2)] hover:text-[var(--accent)] border-[var(--border)] hover:bg-[var(--card-hover)]`}
-              >
-                <i className="bi bi-list text-lg" />
-              </button>
-            )}
-            <h1 className="flex items-center gap-3 text-xl font-bold">
-              <i className={`bi ${activeItem.icon} text-[var(--accent)]`} />
-              {activeItem.label}
-            </h1>
-          </div>
-        </header>
+          {/* Header */}
+          <header className={`sticky top-0 z-20 flex h-[65px] items-center justify-between border-b px-6 bg-[var(--surface)] border-[var(--border)]`}
+          >
+            <div className="flex items-center gap-4">
+              {isMobile && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-sm border text-[var(--text-2)] hover:text-[var(--accent)] border-[var(--border)] hover:bg-[var(--card-hover)]`}
+                >
+                  <i className="bi bi-list text-lg" />
+                </button>
+              )}
+              <h1 className="flex items-center gap-3 text-xl font-bold">
+                <i className={`bi ${activeItem.icon} text-[var(--accent)]`} />
+                {activeItem.label}
+              </h1>
+            </div>
+          </header>
 
-        {/* Content View */}
-        <main className="flex-1 overflow-x-hidden p-3 md:p-6">
-          {children}
-        </main>
-      </div>
+          {/* Content View */}
+          <main className={`flex-1 overflow-x-hidden p-3 md:p-6${valuesHidden ? ' values-hidden' : ''}`}>
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );
