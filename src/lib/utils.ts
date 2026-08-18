@@ -1,3 +1,5 @@
+import { Account, Transaction } from '@/context/DataContext';
+
 export const PREDEFINED_CATEGORIES: Record<string, string[]> = {
   'Moradia': ['Aluguel', 'Condomínio', 'Energia', 'Água', 'Internet', 'Gás', 'Manutenção', 'Móveis e decoração'],
   'Alimentação': ['Restaurante', 'Delivery', 'Mercado', 'Padaria', 'Café'],
@@ -20,6 +22,22 @@ export const PREDEFINED_CATEGORIES: Record<string, string[]> = {
 };
 
 export const ACCOUNT_COLOR_PRESETS = ['#4d9fff', '#00e5b0', '#f5a623', '#ff4d6d', '#a855f7', '#75d934', '#f472b6', '#fb923c'];
+
+export function calcBalance(accountId: string, account: Account, transactions: Transaction[]): number {
+  const base = parseFloat(String(account.anchorBalance)) || 0;
+  let delta = 0;
+  transactions.forEach(tx => {
+    if (!tx.date || tx.date <= account.anchorDate) return;
+    if (tx.accountId !== accountId) return;
+    if (tx.type === 'income') delta += tx.amount;
+    else if (tx.type === 'expense') delta -= tx.amount;
+    else if (tx.type === 'transfer') {
+      if (tx.direction === 'out') delta -= tx.amount;
+      else if (tx.direction === 'in') delta += tx.amount;
+    }
+  });
+  return base + delta;
+}
 
 export function formatBRL(v: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);

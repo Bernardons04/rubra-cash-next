@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useUI } from '@/context/UIContext';
 import { useData, Account, PromptNote } from '@/context/DataContext';
-import { formatBRL, ACCOUNT_COLOR_PRESETS, PREDEFINED_CATEGORIES, uuid } from '@/lib/utils';
+import { formatBRL, ACCOUNT_COLOR_PRESETS, PREDEFINED_CATEGORIES, uuid, calcBalance } from '@/lib/utils';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -37,22 +37,13 @@ function SettingsContent() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [accForm, setAccForm] = useState({ name: '', color: '#4d9fff', emoji: '🏦', anchorDate: new Date().toISOString().split('T')[0], anchorBalance: '' });
 
-  const calcBalance = (acc: Account) => {
-    const anchor = acc.anchorDate;
-    const base = parseFloat(String(acc.anchorBalance)) || 0;
-    let delta = 0;
-    transactions.forEach(tx => {
-      if (!tx.date || tx.date <= anchor) return;
-      if (tx.accountId !== acc.id) return;
-      if (tx.type === 'income') delta += tx.amount;
-      else if (tx.type === 'expense') delta -= tx.amount;
-      else if (tx.type === 'transfer') {
-        if (tx.direction === 'in') delta += tx.amount;
-        if (tx.direction === 'out') delta -= tx.amount;
-      }
-    });
-    return base + delta;
-  };
+  const [showVaultModal, setShowVaultModal] = useState(false);
+  const [editingVault, setEditingVault] = useState<Account | null>(null);
+  const [parentAccountIdForVault, setParentAccountIdForVault] = useState<string | null>(null);
+  const [vaultForm, setVaultForm] = useState({ name: '', anchorDate: new Date().toISOString().split('T')[0], anchorBalance: '' });
+
+  const mainAccounts = accounts.filter(a => !a.parentAccountId);
+  const getVaults = (parentId: string) => accounts.filter(a => a.parentAccountId === parentId);
 
   const openAccountModal = (acc?: Account) => {
     setEditingAccount(acc || null);
@@ -75,6 +66,7 @@ function SettingsContent() {
       id: accId,
       name: f.name.trim(), color: f.color, emoji: f.emoji,
       anchorDate: f.anchorDate, anchorBalance: parseFloat(f.anchorBalance),
+      parentAccountId: null,
     };
 
     let newAccs = [...accounts];
@@ -83,7 +75,7 @@ function SettingsContent() {
     setAccounts(newAccs);
 
     if (currentUser) {
-      const payload = { name: acc.name, color: acc.color, emoji: acc.emoji, anchor_date: acc.anchorDate, anchor_balance: acc.anchorBalance, user_id: currentUser.id };
+      const payload = { name: acc.name, color: acc.color, emoji: acc.emoji, anchor_date: acc.anchorDate, anchor_balance: acc.anchorBalance, parent_account_id: null, user_id: currentUser.id };
       try {
         if (editingAccount) {
           const { error } = await supabaseBrowser.from('accounts').update(payload).eq('id', acc.id);
@@ -105,18 +97,97 @@ function SettingsContent() {
     refreshData();
   };
 
+  const openVaultModal = (parentId: string, vault?: Account) => {
+    setParentAccountIdForVault(parentId);
+    setEditingVault(vault || null);
+    if (vault) {
+      setVaultForm({ name: vault.name, anchorDate: vault.anchorDate, anchorBalance: String(vault.anchorBalance) });
+    } else {
+      setVaultForm({ name: '', anchorDate: new Date().toISOString().split('T')[0], anchorBalance: '' });
+    }
+    setShowVaultModal(true);
+  };
+
+  const saveVault = async () => {
+    const f = vaultForm;
+    if (!f.name.trim()) { setToast({ message: 'Informe o nome do cofrinho', type: 'error' }); return; }
+    if (!f.anchorDate) { setToast({ message: 'Informe a data âncora', type: 'error' }); return; }
+    if (f.anchorBalance === '' || isNaN(parseFloat(f.anchorBalance))) { setToast({ message: 'Informe o saldo âncora', type: 'error' }); return; }
+
+    const parentAcc = accounts.find(a => a.id === parentAccountIdForVault);
+    if (!parentAcc) return;
+
+    const accId = editingVault?.id || uuid();
+    const acc: Account = {
+      id: accId,
+      name: f.name.trim(), color: parentAcc.color, emoji: parentAcc.emoji,
+      anchorDate: f.anchorDate, anchorBalance: parseFloat(f.anchorBalance),
+      parentAccountId: parentAccountIdForVault,
+    };
+
+    let newAccs = [...accounts];
+    if (editingVault) newAccs = newAccs.map(a => a.id === accId ? acc : a);
+    else newAccs.push(acc);
+    setAccounts(newAccs);
+
+    if (currentUser) {
+      const payload = { name: acc.name, color: acc.color, emoji: acc.emoji, anchor_date: acc.anchorDate, anchor_balance: acc.anchorBalance, parent_account_id: parentAccountIdForVault, user_id: currentUser.id };
+      try {
+        if (editingVault) {
+          const { error } = await supabaseBrowser.from('accounts').update(payload).eq('id', acc.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabaseBrowser.from('accounts').insert({ ...payload, id: acc.id });
+          if (error) throw error;
+        }
+        setToast({ message: editingVault ? 'Cofrinho atualizado!' : 'Cofrinho criado!', type: 'success' });
+      } catch (err: any) {
+        setToast({ message: 'Erro: ' + err.message, type: 'error' });
+        if (!editingVault) setAccounts(accounts.filter(a => a.id !== acc.id));
+        return;
+      }
+    } else {
+      setToast({ message: editingVault ? 'Cofrinho atualizado!' : 'Cofrinho criado!', type: 'success' });
+    }
+    setShowVaultModal(false);
+    refreshData();
+  };
+
   const deleteAccount = async (acc: Account) => {
-    const confirmed = await showConfirm('Excluir conta', `Excluir "${acc.name}"? As transações vinculadas não serão apagadas.`);
+    const vaults = getVaults(acc.id);
+    if (vaults.length > 0) {
+      const list = vaults.map(v => v.name).join(', ');
+      setToast({ message: `Esta conta possui cofrinhos ativos: ${list}. Exclua-os ou mova-os antes de excluir a conta.`, type: 'error' });
+      return;
+    }
+    const confirmed = await showConfirm('Excluir conta', `Excluir "${acc.name}"? As transações vinculadas se tornarão sem conta.`);
     if (!confirmed) return;
     try {
       setAccounts(accounts.filter(a => a.id !== acc.id));
-      setTransactions(transactions.map(tx => tx.accountId === acc.id ? { ...tx, accountId: null } : tx));
 
       if (currentUser) {
         const { error } = await supabaseBrowser.from('accounts').delete().eq('id', acc.id);
         if (error) { setToast({ message: 'Erro ao excluir conta: ' + error.message, type: 'error' }); return; }
       }
       setToast({ message: 'Conta excluída', type: 'info' });
+      refreshData();
+    } catch (err: any) {
+      setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+    }
+  };
+
+  const deleteVault = async (vault: Account) => {
+    const confirmed = await showConfirm('Excluir cofrinho', `Excluir cofrinho "${vault.name}"? As transações vinculadas se tornarão sem conta.`);
+    if (!confirmed) return;
+    try {
+      setAccounts(accounts.filter(a => a.id !== vault.id));
+
+      if (currentUser) {
+        const { error } = await supabaseBrowser.from('accounts').delete().eq('id', vault.id);
+        if (error) { setToast({ message: 'Erro ao excluir: ' + error.message, type: 'error' }); return; }
+      }
+      setToast({ message: 'Cofrinho excluído', type: 'info' });
+      refreshData();
     } catch (err: any) {
       setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
     }
@@ -324,29 +395,55 @@ function SettingsContent() {
               <p className="mt-1 text-[13px] text-zinc-500">Cadastre suas contas para rastrear saldos reais. Defina um saldo âncora e o app calcula automaticamente.</p>
             </div>
 
-            {accounts.length === 0 ? (
+            {mainAccounts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-[var(--text-3)]">
                 <i className="bi bi-bank2 mb-3 text-4xl" />
                 <p className="text-sm">Nenhuma conta cadastrada ainda.</p>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {accounts.map(acc => (
-                  <div key={acc.id} className={`${surfaceItem} flex-row`}>
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: acc.color }} />
-                      <span className="shrink-0 text-xl">{acc.emoji || '🏦'}</span>
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold">{acc.name}</div>
-                        <div className="text-xs text-zinc-500">{formatBRL(calcBalance(acc))}</div>
+                {mainAccounts.map(acc => {
+                  const vaults = getVaults(acc.id);
+                  return (
+                    <div key={acc.id} className="flex flex-col gap-2">
+                      <div className={`${surfaceItem} flex-row`}>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: acc.color }} />
+                          <span className="shrink-0 text-xl">{acc.emoji || '🏦'}</span>
+                          <div className="min-w-0">
+                            <div className="truncate text-[13px] font-semibold">{acc.name}</div>
+                            <span className="font-mono font-bold tracking-tight text-[18px]" style={{ color: acc.color }}>{formatBRL(calcBalance(acc.id, acc, transactions))}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          <button onClick={() => openVaultModal(acc.id)} className={btnIconSm} title="Adicionar cofrinho"><i className="bi bi-plus" /></button>
+                          <button onClick={() => openAccountModal(acc)} className={btnIconSm}><i className="bi bi-pencil" /></button>
+                          <button onClick={() => deleteAccount(acc)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                        </div>
                       </div>
+                      
+                      {vaults.length > 0 && (
+                        <div className="pl-6 flex flex-col gap-2 border-l-2 ml-[9px] mb-2" style={{ borderColor: acc.color + '40' }}>
+                          {vaults.map(v => (
+                            <div key={v.id} className={`${surfaceItem} flex-row py-2`}>
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="shrink-0 text-sm opacity-50">{acc.emoji || '🏦'}</span>
+                                <div className="min-w-0">
+                                  <div className="truncate text-[12px] font-semibold">{v.name}</div>
+                                  <span className="font-mono font-bold tracking-tight text-[14px]" style={{ color: acc.color }}>{formatBRL(calcBalance(v.id, v, transactions))}</span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 gap-1.5">
+                                <button onClick={() => openVaultModal(acc.id, v)} className={btnIconSm}><i className="bi bi-pencil" /></button>
+                                <button onClick={() => deleteVault(v)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex shrink-0 gap-1.5">
-                      <button onClick={() => openAccountModal(acc)} className={btnIconSm}><i className="bi bi-pencil" /></button>
-                      <button onClick={() => deleteAccount(acc)} className={btnDangerSm}><i className="bi bi-trash" /></button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <button onClick={() => openAccountModal()} className={`${btnPrimary} mt-4`}>
@@ -501,7 +598,7 @@ function SettingsContent() {
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-sm border border-[var(--green)] bg-[var(--green-dim)] p-3 text-[13px] font-medium text-[var(--green)]">
                 <div className="flex items-center gap-2.5">
                   <i className="bi bi-shield-check text-base" />
-                  <span>Configurado &mdash; chave <code className="rounded bg-[var(--green)]/10 px-1.5 py-0.5 font-mono text-xs">••••{aiSettings.api_key_last4}</code></span>
+                  <span>Configurado &mdash; chave <code className="rounded bg-[var(--green)]/10 px-1.5 py-0.5 text-xs">••••{aiSettings.api_key_last4}</code></span>
                 </div>
                 <span className="rounded-full border border-[var(--green)] bg-[var(--green)]/10 px-2 py-0.5 text-[11px] whitespace-nowrap">{aiModels.find(x => x.value === aiSettings.model)?.label || aiSettings.model}</span>
               </div>
@@ -619,6 +716,40 @@ function SettingsContent() {
               <div className="mt-2 flex gap-2">
                 <button onClick={saveAccount} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer"><i className="bi bi-check-lg" /> Salvar Conta</button>
                 <button onClick={() => setShowAccountModal(false)} className={`rounded-xl border px-4 py-2 font-medium border-[var(--border)] bg-[var(--card)] cursor-pointer text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]`}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vault Modal */}
+      {showVaultModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowVaultModal(false); }}>
+          <div className={`w-full max-w-md rounded-3xl border p-6 shadow-2xl bg-[var(--card)] border-[var(--border-soft)]`}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">{editingVault ? 'Editar Cofrinho' : 'Novo Cofrinho'}</h2>
+              <button onClick={() => setShowVaultModal(false)} className="text-[var(--text-3)] cursor-pointer hover:text-[var(--text)]"><i className="bi bi-x-lg" /></button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-[.06em]">Nome do cofrinho</label>
+                <input type="text" className={inputBase} value={vaultForm.name} onChange={e => setVaultForm({ ...vaultForm, name: e.target.value })} placeholder="Ex: Viagem, Reserva..." />
+              </div>
+              <hr className={`my-2 ${isDark ? 'border-[#262626]' : 'border-zinc-200'}`} />
+              <p className="text-[13px] text-zinc-500"><strong>Saldo inicial do cofrinho:</strong> informe quanto havia neste cofrinho nesta data.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-[.06em]">Data âncora</label>
+                  <input type="date" className={inputBase} value={vaultForm.anchorDate} onChange={e => setVaultForm({ ...vaultForm, anchorDate: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-[.06em]">Saldo nesta data (R$)</label>
+                  <input type="number" step="0.01" className={inputBase} value={vaultForm.anchorBalance} onChange={e => setVaultForm({ ...vaultForm, anchorBalance: e.target.value })} placeholder="0,00" />
+                </div>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button onClick={saveVault} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer"><i className="bi bi-check-lg" /> Salvar Cofrinho</button>
+                <button onClick={() => setShowVaultModal(false)} className={`rounded-xl border px-4 py-2 font-medium border-[var(--border)] bg-[var(--card)] cursor-pointer text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]`}>Cancelar</button>
               </div>
             </div>
           </div>

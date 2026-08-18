@@ -15,6 +15,7 @@ export interface Transaction {
   method: string;
   direction: 'in' | 'out' | null;
   accountId: string | null;
+  counterpartAccountId: string | null;
 }
 
 export interface Account {
@@ -24,6 +25,7 @@ export interface Account {
   color: string;
   anchorDate: string;
   anchorBalance: number;
+  parentAccountId: string | null;
 }
 
 export interface PromptNote {
@@ -102,7 +104,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         subcategory: tx.subcategory || '',
         method: tx.method,
         direction: tx.direction || null,
-        accountId: tx.account_id || null
+        accountId: tx.account_id || null,
+        counterpartAccountId: tx.counterpart_account_id || null
       }));
 
       const mappedAccs: Account[] = (accRes.data || []).map(a => ({
@@ -111,7 +114,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         emoji: a.emoji,
         color: a.color,
         anchorDate: a.anchor_date,
-        anchorBalance: a.anchor_balance
+        anchorBalance: a.anchor_balance,
+        parentAccountId: a.parent_account_id || null
       }));
 
       const mappedCats: Record<string, string[]> = {};
@@ -194,6 +198,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: tx.method,
       direction: tx.direction,
       account_id: tx.accountId,
+      counterpart_account_id: tx.counterpartAccountId || null,
     };
 
     const { error } = await supabaseBrowser.from('transactions').insert(payload);
@@ -215,6 +220,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: tx.method,
       direction: tx.direction,
       account_id: tx.accountId,
+      counterpart_account_id: tx.counterpartAccountId || null,
     };
 
     const { error } = await supabaseBrowser.from('transactions').update(payload).eq('id', tx.id);
@@ -263,6 +269,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: tx.method,
       direction: tx.direction,
       account_id: tx.accountId,
+      counterpart_account_id: tx.counterpartAccountId || null,
     }));
 
     const { error: txErr } = await supabaseBrowser.from('transactions').insert(toInsert);
@@ -283,6 +290,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       color: acc.color,
       anchor_date: acc.anchorDate,
       anchor_balance: acc.anchorBalance,
+      parent_account_id: acc.parentAccountId || null,
     });
     if (error) throw error;
     await refreshData();
@@ -295,6 +303,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       color: acc.color,
       anchor_date: acc.anchorDate,
       anchor_balance: acc.anchorBalance,
+      parent_account_id: acc.parentAccountId || null,
     }).eq('id', acc.id);
     if (error) throw error;
     await refreshData();

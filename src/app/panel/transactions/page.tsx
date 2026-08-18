@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 export default function TransactionsPage() {
   const router = useRouter();
   const { theme, setToast, session, showConfirm } = useUI();
-  const { transactions, accounts, customCategories, aiSettings, refreshData, setTransactions } = useData();
+  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData } = useData();
 
   const currentUser = session?.user;
 
@@ -46,7 +46,7 @@ export default function TransactionsPage() {
   const [txForm, setTxForm] = useState({
     type: 'expense', direction: 'out', title: '', amount: '',
     date: today, category: '', categoryNew: '', subcategory: '',
-    subcategoryNew: '', method: 'pix', accountId: ''
+    subcategoryNew: '', method: 'pix', accountId: '', counterpartAccountId: ''
   });
 
   const [bulkForm, setBulkForm] = useState({
@@ -109,8 +109,8 @@ export default function TransactionsPage() {
     return g;
   }, [filteredTxs]);
 
-  const totalIncome = useMemo(() => filteredTxs.filter(t => t.type === 'income' || (t.type === 'transfer' && t.direction === 'in')).reduce((s, t) => s + t.amount, 0), [filteredTxs]);
-  const totalExpense = useMemo(() => filteredTxs.filter(t => t.type === 'expense' || (t.type === 'transfer' && t.direction === 'out')).reduce((s, t) => s + t.amount, 0), [filteredTxs]);
+  const totalIncome = useMemo(() => filteredTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0), [filteredTxs]);
+  const totalExpense = useMemo(() => filteredTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0), [filteredTxs]);
   const totalBalance = totalIncome - totalExpense;
 
   const getAccount = (id?: string | null) => id ? accounts.find(a => a.id === id) : null;
@@ -118,7 +118,7 @@ export default function TransactionsPage() {
   // TX Modal Methods
   const openAddModal = () => {
     setEditingTx(null);
-    setTxForm({ type: 'expense', direction: 'out', title: '', amount: '', date: new Date().toISOString().split('T')[0], category: '', categoryNew: '', subcategory: '', subcategoryNew: '', method: 'pix', accountId: '' });
+    setTxForm({ type: 'expense', direction: 'out', title: '', amount: '', date: new Date().toISOString().split('T')[0], category: '', categoryNew: '', subcategory: '', subcategoryNew: '', method: 'pix', accountId: '', counterpartAccountId: '' });
     setShowTxModal(true);
   };
 
@@ -127,7 +127,7 @@ export default function TransactionsPage() {
     setTxForm({
       type: tx.type, direction: tx.direction || 'out', title: tx.title, amount: String(tx.amount),
       date: tx.date, category: tx.category || '', categoryNew: '', subcategory: tx.subcategory || '',
-      subcategoryNew: '', method: tx.method || 'other', accountId: tx.accountId || ''
+      subcategoryNew: '', method: tx.method || 'other', accountId: tx.accountId || '', counterpartAccountId: tx.counterpartAccountId || ''
     });
     setShowTxModal(true);
   };
@@ -144,8 +144,8 @@ export default function TransactionsPage() {
     const txId = editingTx?.id || uuid();
     const newTx: Transaction = {
       id: txId,
-      type: f.type as any,
-      direction: f.type === 'transfer' ? f.direction as any : null,
+      type: f.type as 'income' | 'expense' | 'transfer',
+      direction: f.type === 'transfer' ? 'out' : null,
       title: f.title.trim(),
       amount: Math.abs(parseFloat(f.amount)),
       date: f.date,
@@ -153,6 +153,7 @@ export default function TransactionsPage() {
       subcategory: subcategory || '',
       method: f.method,
       accountId: f.accountId || '',
+      counterpartAccountId: f.type === 'transfer' ? (f.counterpartAccountId || '') : '',
     };
 
     let newTxs = [...transactions];
@@ -167,7 +168,10 @@ export default function TransactionsPage() {
       const payload = {
         title: newTx.title, amount: newTx.amount, type: newTx.type, date: newTx.date,
         category: newTx.category, subcategory: newTx.subcategory || null, method: newTx.method,
-        account_id: newTx.accountId || null, direction: newTx.direction || null, user_id: currentUser.id
+        account_id: newTx.accountId || null, 
+        direction: newTx.direction || null, 
+        counterpart_account_id: newTx.counterpartAccountId || null,
+        user_id: currentUser.id
       };
       try {
         if (editingTx) {
@@ -307,9 +311,56 @@ export default function TransactionsPage() {
     setAiFileName(file.name);
     setAiFileSize(`(${(file.size / 1024).toFixed(1)} KB)`);
     const ext = file.name.split('.').pop()?.toLowerCase();
+
     if (ext === 'pdf') {
-      setToast({ message: 'Extração local de PDF não suportada no momento', type: 'error' });
-      // In Vue there was window.extractPdfText, here we could use pdf.js but let's keep it simple or implement if needed
+      setToast({ message: `Lendo "${file.name}"...`, type: 'info' });
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const typedArray = new Uint8Array(e.target!.result as ArrayBuffer);
+
+          if (!(window as any).pdfjsLib) {
+            await new Promise<void>((resolve) => {
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+              script.onload = () => resolve();
+              document.head.appendChild(script);
+            });
+            if ((window as any).pdfjsLib) {
+              (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            }
+          }
+
+          const pdfjsLib = (window as any).pdfjsLib;
+          if (!pdfjsLib) {
+            const base64 = btoa(String.fromCharCode(...typedArray));
+            setAiFileContent(`[PDF:base64] ${base64}`);
+            setToast({ message: `"${file.name}" lido como base64`, type: 'info' });
+            return;
+          }
+
+          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+          let fullText = '';
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map((item: any) => item.str).join(' ');
+            fullText += `\n--- Página ${i} ---\n${pageText}`;
+          }
+
+          if (!fullText.trim()) {
+            setToast({ message: 'PDF vazio ou imagem. Tente TXT ou CSV.', type: 'error' });
+            return;
+          }
+
+          setAiFileContent(fullText);
+          setToast({ message: `"${file.name}" carregado!`, type: 'info' });
+        } catch (err) {
+          setToast({ message: 'Erro ao extrair PDF', type: 'error' });
+        }
+      };
+      reader.readAsArrayBuffer(file);
     } else {
       const r = new FileReader();
       r.onload = e => { setAiFileContent(e.target?.result as string); setToast({ message: `"${file.name}" carregado!`, type: 'info' }); };
@@ -335,10 +386,28 @@ export default function TransactionsPage() {
       const cats: Record<string, string[]> = {};
       allCategories.forEach(c => { cats[c] = getSubcategories(c); });
 
-      const res = await fetch('/api/parse-file', {
+      const payloadAccounts = accounts
+        .filter(a => !a.parentAccountId)
+        .map(a => ({
+          id: a.id,
+          name: a.name,
+          vaults: accounts.filter(v => v.parentAccountId === a.id).map(v => ({ id: v.id, name: v.name }))
+        }));
+
+      const res = await fetch('/api/ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileContent: aiFileContent, fileName: aiFileName, categories: cats, extraNotes: '' })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ 
+          content: aiFileContent, 
+          fileName: aiFileName, 
+          categories: cats, 
+          notes: aiPromptNotes,
+          userName: currentUser?.user_metadata?.name || currentUser?.email || 'Usuário',
+          accounts: payloadAccounts
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
@@ -350,9 +419,12 @@ export default function TransactionsPage() {
         direction: tx.type === 'transfer' ? (['in', 'out'].includes(tx.direction) ? tx.direction : 'out') : null,
         title: String(tx.title).trim(), amount: Math.abs(parseFloat(tx.amount) || 0),
         date: tx.date.includes('T') ? tx.date.split('T')[0] : tx.date,
-        category: tx.category || 'Outros', subcategory: tx.subcategory || '',
+        category: tx.type === 'transfer' ? '' : (tx.category || 'Outros'), 
+        subcategory: tx.type === 'transfer' ? '' : (tx.subcategory || ''),
         method: ['pix', 'credit_card', 'debit_card', 'boleto', 'transfer', 'other'].includes(tx.method) ? tx.method : 'other',
-        accountId: importAccountId || ''
+        accountId: importAccountId || '',
+        counterpartAccountId: tx.counterpart_account_id || null,
+        counterpartNameHint: tx.counterpart_name_hint || null,
       })).filter((tx: any) => tx.amount > 0 && parseDate(tx.date));
 
       if (!valid.length) throw new Error('Nenhuma transação válida encontrada');
@@ -386,6 +458,7 @@ export default function TransactionsPage() {
         id: uuid(), user_id: currentUser.id, title: tx.title, amount: tx.amount, type: tx.type,
         direction: tx.direction || null, date: tx.date, category: tx.category || 'Outros',
         subcategory: tx.subcategory || null, method: tx.method || 'other', account_id: tx.accountId || null,
+        counterpart_account_id: tx.counterpartAccountId || null,
         import_batch_id: batchId, created_at: new Date().toISOString()
       }));
 
@@ -568,17 +641,27 @@ export default function TransactionsPage() {
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{tx.title}</div>
                         <div className="mt-0.5 flex flex-wrap gap-1">
-                          {tx.category && <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-[#262626] text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>{tx.category}</span>}
-                          {tx.subcategory && <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-50 text-zinc-500'}`}>{tx.subcategory}</span>}
-                          <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-50 text-zinc-500'}`}>{methodEmoji(tx.method)} {methodLabel(tx.method)}</span>
-                          {acc && (
+                          {tx.type !== 'transfer' && tx.category && <span className="rounded-sm border border-[#a84551]/40 bg-[#a84551]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#a84551]">{tx.category}</span>}
+                          {tx.type !== 'transfer' && tx.subcategory && <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500'}`}>{tx.subcategory}</span>}
+                          <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500'}`}>{methodEmoji(tx.method)} {methodLabel(tx.method)}</span>
+                          {tx.type !== 'transfer' && acc && (
                             <span className="rounded-sm border px-1.5 py-0.5 text-[10px] font-medium" style={{ borderColor: acc.color, color: acc.color, background: `${acc.color}18` }}>
                               {acc.emoji || '🏦'} {acc.name}
                             </span>
                           )}
                           {tx.type === 'transfer' && (
-                            <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-50 text-zinc-500'}`}>
-                              {tx.direction === 'in' ? '📥 Entrada' : '📤 Saída'}
+                            <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'border-[#333] text-zinc-300 bg-[#262626]' : 'border-zinc-300 text-zinc-700 bg-zinc-100'}`}>
+                              {(() => {
+                                const accStr = acc ? `${acc.emoji || '🏦'} ${acc.name}` : '[Desconhecido]';
+                                let cpStr = '[Destino Desconhecido]';
+                                if (tx.counterpartAccountId) {
+                                  const cp = getAccount(tx.counterpartAccountId);
+                                  cpStr = cp ? `${cp.emoji || '🏦'} ${cp.name}` : '[Conta Excluída]';
+                                } else if ((tx as any).counterpartNameHint) {
+                                  cpStr = `[${(tx as any).counterpartNameHint}]`;
+                                }
+                                return tx.direction === 'in' ? `${cpStr} → ${accStr}` : `${accStr} → ${cpStr}`;
+                              })()}
                             </span>
                           )}
                         </div>
@@ -606,12 +689,16 @@ export default function TransactionsPage() {
             })}
           </div>
         </div>
+      ) : loadingData ? (
+        <div className="flex justify-center items-center py-20">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-800 border-t-[#a84551]" />
+        </div>
       ) : (
         <div className="py-20 text-center text-zinc-400">
           <i className="bi bi-cash-stack mb-4 block text-5xl" />
           <h3 className="font-display mb-2 text-xl text-zinc-600 dark:text-zinc-300">Nenhuma transação ainda</h3>
           <p className="text-sm">Importe um extrato com IA ou adicione manualmente.</p>
-          <button onClick={openAddModal} className="mt-4 rounded-sm bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+          <button onClick={openAddModal} className="mt-4 cursor-pointer rounded-sm bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
             <i className="bi bi-plus-lg" /> Adicionar transação
           </button>
         </div>
@@ -668,18 +755,7 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {txForm.type === 'transfer' && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Direção da transferência</label>
-                  <div className={`flex items-center justify-between gap-3 rounded-sm border px-3 py-2 text-sm font-semibold ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
-                    <span style={{ color: txForm.direction === 'out' ? '#ff4d6d' : 'var(--text-3)' }}><i className="bi bi-box-arrow-right" /> Saiu desta conta</span>
-                    <div className="relative h-6 w-11 shrink-0 cursor-pointer rounded-full" style={{ background: txForm.direction === 'in' ? '#75d934' : '#ff4d6d' }} onClick={() => setTxForm({ ...txForm, direction: txForm.direction === 'in' ? 'out' : 'in' })}>
-                      <div className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white ${txForm.direction === 'in' ? 'left-[23px]' : 'left-[3px]'}`} />
-                    </div>
-                    <span style={{ color: txForm.direction === 'in' ? '#75d934' : 'var(--text-3)' }}><i className="bi bi-box-arrow-in-left" /> Entrou nesta conta</span>
-                  </div>
-                </div>
-              )}
+
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium">Título / Descrição</label>
@@ -697,30 +773,32 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-2 grid-cols-1 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Categoria</label>
-                  <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.category} onChange={e => setTxForm({ ...txForm, category: e.target.value, subcategory: '' })}>
-                    <option value="">Selecionar categoria</option>
-                    {allCategories.map(c => <option key={c} value={c}>{categoryEmoji(c)} {c}</option>)}
-                    <option value="__new__">➕ Criar nova categoria</option>
-                  </select>
-                  {txForm.category === '__new__' && (
-                    <input type="text" className={`mt-1 rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} placeholder="Nova categoria" value={txForm.categoryNew} onChange={e => setTxForm({ ...txForm, categoryNew: e.target.value })} />
-                  )}
+              {txForm.type !== 'transfer' && (
+                <div className="grid md:grid-cols-2 grid-cols-1 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">Categoria</label>
+                    <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.category} onChange={e => setTxForm({ ...txForm, category: e.target.value, subcategory: '' })}>
+                      <option value="">Selecionar categoria</option>
+                      {allCategories.map(c => <option key={c} value={c}>{categoryEmoji(c)} {c}</option>)}
+                      <option value="__new__">➕ Criar nova categoria</option>
+                    </select>
+                    {txForm.category === '__new__' && (
+                      <input type="text" className={`mt-1 rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} placeholder="Nova categoria" value={txForm.categoryNew} onChange={e => setTxForm({ ...txForm, categoryNew: e.target.value })} />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">Subcategoria</label>
+                    <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.subcategory} onChange={e => setTxForm({ ...txForm, subcategory: e.target.value })}>
+                      <option value="">{txForm.category ? 'Sem subcategoria' : 'Selecione uma categoria'}</option>
+                      {getSubcategories(txForm.category).map(s => <option key={s} value={s}>{s}</option>)}
+                      {txForm.category && txForm.category !== '__new__' && <option value="__new__">➕ Criar nova</option>}
+                    </select>
+                    {txForm.subcategory === '__new__' && (
+                      <input type="text" className={`mt-1 rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} placeholder="Nova subcategoria" value={txForm.subcategoryNew} onChange={e => setTxForm({ ...txForm, subcategoryNew: e.target.value })} />
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Subcategoria</label>
-                  <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.subcategory} onChange={e => setTxForm({ ...txForm, subcategory: e.target.value })}>
-                    <option value="">{txForm.category ? 'Sem subcategoria' : 'Selecione uma categoria'}</option>
-                    {getSubcategories(txForm.category).map(s => <option key={s} value={s}>{s}</option>)}
-                    {txForm.category && txForm.category !== '__new__' && <option value="__new__">➕ Criar nova</option>}
-                  </select>
-                  {txForm.subcategory === '__new__' && (
-                    <input type="text" className={`mt-1 rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} placeholder="Nova subcategoria" value={txForm.subcategoryNew} onChange={e => setTxForm({ ...txForm, subcategoryNew: e.target.value })} />
-                  )}
-                </div>
-              </div>
+              )}
 
               <div className="grid md:grid-cols-2 grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
@@ -734,14 +812,46 @@ export default function TransactionsPage() {
                     <option value="other">📦 Outro</option>
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Conta (opcional)</label>
-                  <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.accountId} onChange={e => setTxForm({ ...txForm, accountId: e.target.value })}>
-                    <option value="">Sem conta</option>
-                    {accounts.map(a => <option key={a.id} value={a.id}>{a.emoji || '🏦'} {a.name}</option>)}
-                  </select>
-                </div>
+                {txForm.type !== 'transfer' ? (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">
+                      {txForm.type === 'income' ? 'Conta onde entrou (opcional)' : 'Conta de onde saiu (opcional)'}
+                    </label>
+                    <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.accountId} onChange={e => setTxForm({ ...txForm, accountId: e.target.value })}>
+                      <option value="">Sem conta</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.parentAccountId ? '\u00A0\u00A0└\u00A0' : ''}{a.emoji || '🏦'} {a.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">De (origem)</label>
+                    <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.accountId} onChange={e => setTxForm({ ...txForm, accountId: e.target.value })}>
+                      <option value="">Selecione a origem</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.parentAccountId ? '\u00A0\u00A0└\u00A0' : ''}{a.emoji || '🏦'} {a.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
+
+              {txForm.type === 'transfer' && (
+                <div className="grid md:grid-cols-2 grid-cols-1 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium">Para (destino)</label>
+                    <select className={`rounded-sm border px-3 py-2 text-sm outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-white border-zinc-200'}`} value={txForm.counterpartAccountId} onChange={e => setTxForm({ ...txForm, counterpartAccountId: e.target.value })}>
+                      <option value="">Selecione o destino</option>
+                      {accounts.map(a => <option key={a.id} value={a.id} disabled={a.id === txForm.accountId}>{a.parentAccountId ? '\u00A0\u00A0└\u00A0' : ''}{a.emoji || '🏦'} {a.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {txForm.type === 'transfer' && (
+                <div className={`rounded-sm border p-3 text-sm ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
+                  <p className="text-xs text-zinc-500">
+                    ℹ️ Somente o saldo da conta de origem será atualizado. Para refletir o saldo no destino, lance também a entrada na conta de destino.
+                  </p>
+                </div>
+              )}
 
               <div className="mt-2 flex gap-2">
                 <button onClick={saveTx} className="flex-1 rounded-sm bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer">Salvar Transação</button>
@@ -818,10 +928,10 @@ export default function TransactionsPage() {
 
               {pendingTxs.length > 0 && !aiProcessing && (
                 <>
-                  <div className={`rounded-sm border p-3 ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
-                    {pendingTxs.slice(0, 3).map((tx, i) => (
-                      <div key={i} className="flex items-center gap-2 py-1">
-                        <div className="h-full w-1 shrink-0 rounded-full" style={{ background: tx.type === 'income' ? '#75d934' : tx.type === 'transfer' ? '#4d9fff' : '#ff4d6d' }} />
+                  <div className={`rounded-sm border p-3 flex flex-col gap-1 max-h-64 overflow-y-auto ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
+                    {pendingTxs.map((tx, i) => (
+                      <div key={i} className={`flex items-start gap-2 py-2 ${i < pendingTxs.length - 1 ? (isDark ? 'border-b border-[#333]' : 'border-b border-zinc-200') : ''}`}>
+                        <div className="h-full min-h-[30px] w-1 shrink-0 rounded-full" style={{ background: tx.type === 'income' ? '#75d934' : tx.type === 'transfer' ? '#4d9fff' : '#ff4d6d' }} />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="truncate text-xs font-semibold">{tx.title}</span>
@@ -829,11 +939,48 @@ export default function TransactionsPage() {
                               {tx.type === 'income' ? '+' : tx.type === 'transfer' ? '↔' : '-'}{formatBRL(tx.amount)}
                             </span>
                           </div>
-                          <div className="text-[11px] text-zinc-500">{formatDate(tx.date)} · {tx.category || 'Outros'}</div>
+                          <div className="text-[11px] text-zinc-500 mt-1 flex flex-col gap-1.5">
+                            <span>{formatDate(tx.date)} {tx.type !== 'transfer' ? `· ${tx.category || 'Outros'}` : ''}</span>
+                            {tx.type === 'transfer' && !tx.counterpartAccountId && (tx as any).counterpartNameHint && (
+                              <div className="flex flex-col gap-1.5 mt-1 rounded-sm border p-2" style={{ borderColor: '#ff4d6d40', backgroundColor: '#ff4d6d10' }}>
+                                <span className="text-[#ff4d6d] font-medium"><i className="bi bi-exclamation-triangle" /> Destino não encontrado: {(tx as any).counterpartNameHint}</span>
+                                <div className="flex gap-2 items-center">
+                                  <select 
+                                    className={`flex-1 rounded-sm border px-2 py-1 text-xs outline-none ${isDark ? 'bg-[#1C1C1C] border-[#262626] text-white' : 'bg-white border-zinc-200 text-black'}`} 
+                                    value={tx.counterpartAccountId || ''} 
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setPendingTxs(prev => prev.map((p, idx) => idx === i ? { ...p, counterpartAccountId: val || null } : p));
+                                    }}
+                                  >
+                                    <option value="">Selecione a conta/cofrinho...</option>
+                                    {accounts.map(a => <option key={a.id} value={a.id}>{a.parentAccountId ? '\u00A0\u00A0└\u00A0' : ''}{a.emoji || '🏦'} {a.name}</option>)}
+                                  </select>
+                                  {tx.direction === 'in' ? (
+                                    <button onClick={() => setPendingTxs(prev => prev.map((p, idx) => idx === i ? { ...p, type: 'income', category: 'Outros', counterpartAccountId: null } : p))} className={`shrink-0 rounded-sm border px-2 py-1 text-[10px] font-medium text-[#75d934] border-[#75d93440] bg-[#75d93410] hover:bg-[#75d93420]`}>
+                                      Tratar como Receita
+                                    </button>
+                                  ) : tx.direction === 'out' ? (
+                                    <button onClick={() => setPendingTxs(prev => prev.map((p, idx) => idx === i ? { ...p, type: 'expense', category: 'Outros', counterpartAccountId: null } : p))} className={`shrink-0 rounded-sm border px-2 py-1 text-[10px] font-medium ${isDark ? 'bg-[#262626] border-[#333] hover:bg-[#333]' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'}`}>
+                                      Tratar como Despesa
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => setPendingTxs(prev => prev.map((p, idx) => idx === i ? { ...p, type: 'income', category: 'Outros', counterpartAccountId: null } : p))} className="shrink-0 rounded-sm border px-2 py-1 text-[10px] font-medium text-[#75d934] border-[#75d93440] bg-[#75d93410] hover:bg-[#75d93420]">
+                                        Receita
+                                      </button>
+                                      <button onClick={() => setPendingTxs(prev => prev.map((p, idx) => idx === i ? { ...p, type: 'expense', category: 'Outros', counterpartAccountId: null } : p))} className={`shrink-0 rounded-sm border px-2 py-1 text-[10px] font-medium ${isDark ? 'bg-[#262626] border-[#333] hover:bg-[#333]' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'}`}>
+                                        Despesa
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
-                    {pendingTxs.length > 3 && <div className="pt-2 text-center text-[11px] text-zinc-500">+ {pendingTxs.length - 3} transações a importar</div>}
                   </div>
 
                   <hr className={`my-2 ${isDark ? 'border-[#333]' : 'border-zinc-200'}`} />
@@ -958,8 +1105,8 @@ export default function TransactionsPage() {
               Para usar esse recurso, configure sua chave de IA nas <strong>Configurações</strong>. Ela é criptografada e fica segura no servidor.
             </p>
             <div className="flex flex-col gap-2">
-              <button onClick={() => { setShowAISetupModal(false); router.push('/panel/settings?tab=ai'); }} className="rounded-sm bg-zinc-800 px-4 py-2 font-medium text-white hover:bg-zinc-700"><i className="bi bi-gear" /> Configurar IA</button>
-              <button onClick={() => setShowAISetupModal(false)} className={`rounded-sm border px-4 py-2 font-medium ${isDark ? 'border-[#262626] bg-[#1C1C1C] hover:bg-[#262626]' : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100'}`}>Agora não</button>
+              <button onClick={() => { setShowAISetupModal(false); router.push('/panel/settings?tab=ai'); }} className="rounded-sm bg-zinc-800 px-4 py-2 font-medium text-white cursor-pointer hover:bg-zinc-700"><i className="bi bi-gear" /> Configurar IA</button>
+              <button onClick={() => setShowAISetupModal(false)} className={`rounded-sm border cursor-pointer px-4 py-2 font-medium ${isDark ? 'border-[#262626] bg-[#1C1C1C] hover:bg-[#262626]' : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100'}`}>Agora não</button>
             </div>
           </div>
         </div>
