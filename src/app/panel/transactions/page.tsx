@@ -561,7 +561,7 @@ export default function TransactionsPage() {
       </div>
 
       <div className="flex items-center justify-end gap-2">
-        <span className="font-mono text-xs text-zinc-500">{filteredTxs.length} registro{filteredTxs.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-zinc-500">{filteredTxs.length} registro{filteredTxs.length !== 1 ? 's' : ''}</span>
         <button onClick={toggleSelectionMode} className={`cursor-pointer flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${selectionMode ? 'btn-ghost btn-active' : 'btn-ghost'}`}>
           <i className="bi bi-check2-square" /> {selectionMode ? 'Cancelar' : 'Selecionar'}
         </button>
@@ -886,7 +886,7 @@ export default function TransactionsPage() {
                   </div>
 
                   {aiFileName && (
-                    <div className={`rounded-sm border px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300 ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
+                    <div className={`rounded-sm border px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 ${isDark ? 'bg-[#1C1C1C] border-[#262626]' : 'bg-zinc-50 border-zinc-200'}`}>
                       <i className="bi bi-file-earmark-check" /> {aiFileName} {aiFileSize}
                     </div>
                   )}
@@ -918,7 +918,7 @@ export default function TransactionsPage() {
 
               {aiProcessing && (
                 <div className="py-8 text-center">
-                  <div className="font-mono text-sm font-medium"><i className="bi bi-cpu" /> Analisando extrato com IA...</div>
+                  <div className="text-sm font-medium"><i className="bi bi-cpu" /> Analisando extrato com IA...</div>
                   <div className="mt-1 text-xs text-zinc-500">{aiLoadingMsg}</div>
                   <div className={`mt-4 h-1 w-full overflow-hidden rounded-full ${isDark ? 'bg-[#333]' : 'bg-zinc-200'}`}>
                     <div className="h-full bg-zinc-800 dark:bg-zinc-200" style={{ width: `${aiProgress}%` }} />

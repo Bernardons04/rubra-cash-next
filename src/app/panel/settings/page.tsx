@@ -421,7 +421,7 @@ function SettingsContent() {
                           <button onClick={() => deleteAccount(acc)} className={btnDangerSm}><i className="bi bi-trash" /></button>
                         </div>
                       </div>
-                      
+
                       {vaults.length > 0 && (
                         <div className="pl-6 flex flex-col gap-2 border-l-2 ml-[9px] mb-2" style={{ borderColor: acc.color + '40' }}>
                           {vaults.map(v => (
@@ -766,7 +766,7 @@ function SettingsContent() {
             </div>
             <div className="flex flex-col gap-4">
               <p className="text-[13px] text-zinc-500">O Rubra Cash realiza a importação inteligente e, para isso, você conecta sua própria conta do <strong>OpenRouter</strong>. É seguro, privado e opcional.</p>
-              
+
               <div className="flex flex-col gap-4">
                 <div className="flex gap-3 items-start">
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--surface)] text-xs text-[var(--text)] border border-[var(--border)]"><i className="bi bi-person-plus" /></div>
