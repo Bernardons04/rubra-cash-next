@@ -303,9 +303,6 @@ function SettingsContent() {
   };
 
   // AI Settings
-  const aiProviders = [{ value: 'openrouter', label: 'OpenRouter', status: 'active' }, { value: 'openai', label: 'OpenAI', status: 'soon' }, { value: 'anthropic', label: 'Anthropic', status: 'soon' }, { value: 'google', label: 'Google', status: 'soon' }];
-  const aiModels = [{ value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' }, { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' }, { value: 'openai/gpt-4o-mini', label: 'GPT-4o mini' }];
-  const [aiForm, setAiForm] = useState({ provider: 'openrouter', model: aiModels[0].value });
   const [tempApiKey, setTempApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
@@ -313,15 +310,12 @@ function SettingsContent() {
   const [showHelpModal, setShowHelpModal] = useState(false);
 
   useEffect(() => {
-    if (aiSettings) {
-      setAiForm({ provider: aiSettings.provider || 'openrouter', model: aiSettings.model || aiModels[0].value });
-    }
+    // Optional: Keep effect if we need to do anything when aiSettings loads
   }, [aiSettings]);
 
   const saveAISettings = async () => {
     setAiSaveError('');
     const isFirstSetup = !aiSettings;
-    if (!aiForm.model) { setAiSaveError('Selecione um modelo.'); return; }
     if (isFirstSetup && !tempApiKey.trim()) { setAiSaveError('Informe a API Key para a configuração inicial.'); return; }
 
     setAiSaving(true);
@@ -329,7 +323,7 @@ function SettingsContent() {
       const token = session?.access_token;
       if (!token) throw new Error('Sessão expirada. Faça login novamente.');
 
-      const payload: any = { provider: aiForm.provider, model: aiForm.model };
+      const payload: any = {};
       if (tempApiKey.trim()) payload.api_key = tempApiKey.trim();
 
       const res = await fetch(`/api/user/ai-settings`, {
@@ -600,7 +594,7 @@ function SettingsContent() {
                   <i className="bi bi-shield-check text-base" />
                   <span>Configurado &mdash; chave <code className="rounded bg-[var(--green)]/10 px-1.5 py-0.5 text-xs">••••{aiSettings.api_key_last4}</code></span>
                 </div>
-                <span className="rounded-full border border-[var(--green)] bg-[var(--green)]/10 px-2 py-0.5 text-[11px] whitespace-nowrap">{aiModels.find(x => x.value === aiSettings.model)?.label || aiSettings.model}</span>
+                <span className="rounded-full border border-[var(--green)] bg-[var(--green)]/10 px-2 py-0.5 text-[11px] whitespace-nowrap">Ativo</span>
               </div>
             ) : (
               <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-[var(--orange)] bg-[var(--orange-dim)] p-3 text-[13px] font-medium text-[var(--orange)]">
@@ -614,19 +608,10 @@ function SettingsContent() {
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-[.06em]">Provider</label>
-                <select className={inputBase} value={aiForm.provider} disabled>
-                  {aiProviders.map(p => <option key={p.value} value={p.value} disabled={p.status !== 'active'}>{p.label}{p.status === 'soon' ? ' (em breve)' : ''}</option>)}
+                <select className={`${inputBase} opacity-60 cursor-not-allowed`} value="openrouter" disabled>
+                  <option value="openrouter">OpenRouter (Padrão)</option>
                 </select>
-                <p className="text-[11px] text-zinc-500">Mais providers em breve.</p>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-[.06em]">Modelo</label>
-                <select className={`cursor-pointer ${inputBase}`} value={aiForm.model} onChange={e => setAiForm({ ...aiForm, model: e.target.value })}>
-                  <option value="">Selecione um modelo</option>
-                  {aiModels.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-                <p className="text-[11px] text-zinc-500">Escolha o modelo que deseja utilizar.</p>
+                <p className="text-[11px] text-zinc-500">O Rubra Cash utiliza o modelo inteligente Gemini via OpenRouter.</p>
               </div>
 
               <div className="flex flex-col gap-1.5">

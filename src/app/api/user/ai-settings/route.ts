@@ -1,7 +1,6 @@
 import { handleCors } from '@/lib/cors';
 import { createAuthenticatedClient, extractBearerToken } from '@/lib/supabaseClient';
 import { encrypt } from '@/lib/encryption';
-import { validateProviderAndModel } from '@/lib/aiAllowlist';
 
 export async function GET(request: Request) {
   const { error, preflight, corsHeaders } = handleCors(request);
@@ -52,14 +51,12 @@ export async function POST(request: Request) {
   }
 
   // 2. Sanitização e normalização
-  const provider = typeof body.provider === 'string' ? body.provider.trim().toLowerCase() : '';
-  const model = typeof body.model === 'string' ? body.model.trim() : '';
   const rawApiKey = typeof body.api_key === 'string' ? body.api_key.trim() : '';
 
   // 3. Validação básica de presença
-  if (!provider || !model || !rawApiKey) {
+  if (!rawApiKey) {
     return Response.json(
-      { error: 'Campos "provider", "model" e "api_key" são obrigatórios.' },
+      { error: 'O campo "api_key" é obrigatório.' },
       { status: 400, headers: corsHeaders }
     );
   }
@@ -72,11 +69,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // 5. Validação via allowlist (provider + model)
-  const allowlistResult = validateProviderAndModel(provider, model);
-  if (!allowlistResult.valid) {
-    return Response.json({ error: allowlistResult.error }, { status: 400, headers: corsHeaders });
-  }
+  // 5. Configuração hardcoded de Provider e Model
+  const provider = 'openrouter';
+  const model = 'google/gemini-2.5-flash';
 
   // 6. Criptografar a chave — ocorre APENAS no servidor
   let encryptedApiKey: string;

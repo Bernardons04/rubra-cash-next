@@ -92,7 +92,12 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     // We remove the confirm from here, as handleLogout in layout will call showConfirm
     await supabaseBrowser.auth.signOut();
-    router.push('/auth');
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as any).standalone);
+    if (isPWA) {
+      router.push('/auth');
+    } else {
+      router.push('/');
+    }
   };
 
   const [toast, setToast] = useState<ToastInfo | null>(null);

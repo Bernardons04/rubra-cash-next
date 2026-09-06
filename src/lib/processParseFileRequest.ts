@@ -161,7 +161,8 @@ ${accounts.length > 0 ? accounts.map(a => `  - ${a.name} (ID: ${a.id})${a.vaults
   ];
 
   try {
-    const response = await fetch(endpoint, {
+    let currentModel = model;
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -169,8 +170,23 @@ ${accounts.length > 0 ? accounts.map(a => `  - ${a.name} (ID: ${a.id})${a.vaults
         'HTTP-Referer': 'https://rubra-cash.vercel.app',
         'X-Title': 'Rubra Cash',
       },
-      body: JSON.stringify({ model, messages, temperature, max_tokens }),
+      body: JSON.stringify({ model: currentModel, messages, temperature, max_tokens }),
     });
+
+    if (!response.ok && provider === 'openrouter' && currentModel === 'google/gemini-2.5-flash') {
+      console.warn(`[AI] Falha com ${currentModel} (${response.status}). Tentando fallback para openai/gpt-4o-mini...`);
+      currentModel = 'openai/gpt-4o-mini';
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://rubra-cash.vercel.app',
+          'X-Title': 'Rubra Cash',
+        },
+        body: JSON.stringify({ model: currentModel, messages, temperature, max_tokens }),
+      });
+    }
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));

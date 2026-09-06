@@ -66,8 +66,8 @@ export async function POST(request: Request) {
     ...body,
     aiConfig: {
       apiKey,
-      model: aiSettings.model,
-      provider: aiSettings.provider,
+      model: 'google/gemini-2.5-flash', // Força o padrão independente do que está no DB
+      provider: 'openrouter', // Força o padrão independente do que está no DB
     },
   });
 

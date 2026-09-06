@@ -1,7 +1,6 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
 import { useUI } from './UIContext';
 
 export interface Transaction {
@@ -77,82 +76,76 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [aiSettings, setAiSettings] = useState<AISettings | null>(null);
   const [loadingData, setLoadingData] = useState<boolean>(true);
 
+  /**
+   * Helper para chamadas à API autenticada.
+   * Injeta o token Bearer e trata erros globais (ex: 401 Unauthorized).
+   */
+  const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+    if (!session?.access_token) {
+      throw new Error('Usuário não autenticado.');
+    }
+
+    const res = await fetch(endpoint, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        ...options.headers,
+      },
+    });
+
+    if (res.status === 401) {
+      setToast({ message: 'Sua sessão expirou. Por favor, faça login novamente.', type: 'warning' });
+      logout();
+      throw new Error('Unauthorized');
+    }
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Erro HTTP: ${res.status}`);
+    }
+
+    // Retorna null para status 204 (No Content)
+    if (res.status === 204) return null;
+
+    return res.json();
+  };
+
   const refreshData = async () => {
-    const uid = session?.user?.id;
-    if (!uid) return;
+    if (!session?.access_token) return;
 
     try {
       const [txRes, accRes, catRes, notesRes] = await Promise.all([
-        supabaseBrowser.from('transactions').select('*').eq('user_id', uid).order('date', { ascending: false }),
-        supabaseBrowser.from('accounts').select('*').eq('user_id', uid),
-        supabaseBrowser.from('custom_categories').select('*').eq('user_id', uid),
-        supabaseBrowser.from('notes').select('*').eq('user_id', uid).order('created_at', { ascending: true }),
+        apiFetch('/api/transactions'),
+        apiFetch('/api/accounts'),
+        apiFetch('/api/categories'),
+        apiFetch('/api/notes'),
       ]);
 
-      if (txRes.error) throw txRes.error;
-      if (accRes.error) throw accRes.error;
-      if (catRes.error) throw catRes.error;
-      if (notesRes.error) throw notesRes.error;
-
-      const mappedTxs: Transaction[] = (txRes.data || []).map(tx => ({
-        id: tx.id,
-        date: tx.date,
-        title: tx.title,
-        amount: tx.amount,
-        type: tx.type,
-        category: tx.category,
-        subcategory: tx.subcategory || '',
-        method: tx.method,
-        direction: tx.direction || null,
-        accountId: tx.account_id || null,
-        counterpartAccountId: tx.counterpart_account_id || null
-      }));
-
-      const mappedAccs: Account[] = (accRes.data || []).map(a => ({
-        id: a.id,
-        name: a.name,
-        emoji: a.emoji,
-        color: a.color,
-        anchorDate: a.anchor_date,
-        anchorBalance: a.anchor_balance,
-        parentAccountId: a.parent_account_id || null
-      }));
-
-      const mappedCats: Record<string, string[]> = {};
-      (catRes.data || []).forEach(c => {
-        mappedCats[c.category_name] = c.subcategories || [];
-      });
-
-      const mappedNotes: PromptNote[] = (notesRes.data || []).map(n => ({
-        id: n.id,
-        title: n.title,
-        description: n.description
-      }));
-
-      setTransactions(mappedTxs);
-      setAccounts(mappedAccs);
-      setCustomCategories(mappedCats);
-      setAiPromptNotes(mappedNotes);
+      setTransactions(txRes.transactions || []);
+      setAccounts(accRes.accounts || []);
+      setCustomCategories(catRes.categories || {});
+      setAiPromptNotes(notesRes.notes || []);
     } catch (err: any) {
       console.error('Error refreshing data:', err);
-      if (err?.code === 'PGRST303' || err?.message?.includes('JWT expired')) {
-        setToast({ message: 'Sua sessão expirou. Por favor, faça login novamente.', type: 'warning' });
-        logout();
-      }
     } finally {
       setLoadingData(false);
     }
   };
 
   const refreshAISettings = async () => {
-    if (!session) return;
+    if (!session?.access_token) return;
     try {
-      const token = session.access_token;
+      // O endpoint original ai-settings já espera o token
       const res = await fetch(`/api/user/ai-settings`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
       if (res.status === 404) {
         setAiSettings(null);
+        return;
+      }
+      if (res.status === 401) {
+        logout();
         return;
       }
       if (!res.ok) throw new Error(`Erro ${res.status}`);
@@ -183,178 +176,148 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const addTransaction = async (tx: Omit<Transaction, 'id'> & { id?: string }) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
-
     const payload = {
-      id: tx.id || crypto.randomUUID(),
-      user_id: uid,
-      date: tx.date,
       title: tx.title,
       amount: tx.amount,
       type: tx.type,
-      category: tx.category,
+      date: tx.date,
+      category: tx.category || null,
       subcategory: tx.subcategory || null,
-      method: tx.method,
-      direction: tx.direction,
-      account_id: tx.accountId,
-      counterpart_account_id: tx.counterpartAccountId || null,
+      method: tx.method || null,
+      direction: tx.direction || null,
+      accountId: tx.accountId || null,
+      counterpartAccountId: tx.counterpartAccountId || null,
     };
 
-    const { error } = await supabaseBrowser.from('transactions').insert(payload);
-    if (error) throw error;
+    await apiFetch('/api/transactions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
     await refreshData();
   };
 
   const updateTransaction = async (tx: Transaction) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
-
     const payload = {
-      date: tx.date,
       title: tx.title,
       amount: tx.amount,
       type: tx.type,
-      category: tx.category,
+      date: tx.date,
+      category: tx.category || null,
       subcategory: tx.subcategory || null,
-      method: tx.method,
-      direction: tx.direction,
-      account_id: tx.accountId,
-      counterpart_account_id: tx.counterpartAccountId || null,
+      method: tx.method || null,
+      direction: tx.direction || null,
+      accountId: tx.accountId || null,
+      counterpartAccountId: tx.counterpartAccountId || null,
     };
 
-    const { error } = await supabaseBrowser.from('transactions').update(payload).eq('id', tx.id);
-    if (error) throw error;
+    await apiFetch(`/api/transactions/${tx.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
     await refreshData();
   };
 
   const deleteTransaction = async (id: string) => {
-    const { error } = await supabaseBrowser.from('transactions').delete().eq('id', id);
-    if (error) throw error;
+    await apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });
     await refreshData();
   };
 
   const deleteTransactionsBatch = async (ids: string[]) => {
-    const { error } = await supabaseBrowser.from('transactions').delete().in('id', ids);
-    if (error) throw error;
+    await apiFetch('/api/transactions/batch', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids }),
+    });
     await refreshData();
   };
 
-  const saveTransactionsBatch = async (txs: Omit<Transaction, 'id'>[], batchMetadata: { name: string; type: string; raw_text: string }) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
+  const saveTransactionsBatch = async (
+    txs: Omit<Transaction, 'id'>[],
+    batchMetadata: { name: string; type: string; raw_text: string }
+  ) => {
+    const payload = {
+      metadata: {
+        name: batchMetadata.name,
+        type: batchMetadata.type,
+        raw_text: batchMetadata.raw_text,
+      },
+      transactions: txs.map(tx => ({
+        title: tx.title,
+        amount: tx.amount,
+        type: tx.type,
+        date: tx.date,
+        category: tx.category || null,
+        subcategory: tx.subcategory || null,
+        method: tx.method || null,
+        direction: tx.direction || null,
+        accountId: tx.accountId || null,
+        counterpartAccountId: tx.counterpartAccountId || null,
+      })),
+    };
 
-    // 1. Criar lote de importação
-    const batchId = crypto.randomUUID();
-    const { error: batchErr } = await supabaseBrowser.from('import_batches').insert({
-      id: batchId,
-      user_id: uid,
-      file_name: batchMetadata.name,
-      file_type: batchMetadata.type,
-      raw_text: batchMetadata.raw_text,
+    await apiFetch('/api/transactions/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
-    if (batchErr) throw batchErr;
-
-    // 2. Criar as transações vinculadas ao lote
-    const toInsert = txs.map(tx => ({
-      id: crypto.randomUUID(),
-      user_id: uid,
-      batch_id: batchId,
-      date: tx.date,
-      title: tx.title,
-      amount: tx.amount,
-      type: tx.type,
-      category: tx.category,
-      subcategory: tx.subcategory || null,
-      method: tx.method,
-      direction: tx.direction,
-      account_id: tx.accountId,
-      counterpart_account_id: tx.counterpartAccountId || null,
-    }));
-
-    const { error: txErr } = await supabaseBrowser.from('transactions').insert(toInsert);
-    if (txErr) throw txErr;
-
     await refreshData();
   };
 
   const addAccount = async (acc: Omit<Account, 'id'>) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
-
-    const { error } = await supabaseBrowser.from('accounts').insert({
-      id: crypto.randomUUID(),
-      user_id: uid,
+    const payload = {
       name: acc.name,
-      emoji: acc.emoji,
-      color: acc.color,
-      anchor_date: acc.anchorDate,
-      anchor_balance: acc.anchorBalance,
-      parent_account_id: acc.parentAccountId || null,
+      emoji: acc.emoji || null,
+      color: acc.color || null,
+      anchorDate: acc.anchorDate || null,
+      anchorBalance: acc.anchorBalance !== undefined ? acc.anchorBalance : null,
+      parentAccountId: acc.parentAccountId || null,
+    };
+
+    await apiFetch('/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
-    if (error) throw error;
     await refreshData();
   };
 
   const updateAccount = async (acc: Account) => {
-    const { error } = await supabaseBrowser.from('accounts').update({
+    const payload = {
       name: acc.name,
-      emoji: acc.emoji,
-      color: acc.color,
-      anchor_date: acc.anchorDate,
-      anchor_balance: acc.anchorBalance,
-      parent_account_id: acc.parentAccountId || null,
-    }).eq('id', acc.id);
-    if (error) throw error;
+      emoji: acc.emoji || null,
+      color: acc.color || null,
+      anchorDate: acc.anchorDate || null,
+      anchorBalance: acc.anchorBalance !== undefined ? acc.anchorBalance : null,
+      parentAccountId: acc.parentAccountId || null,
+    };
+
+    await apiFetch(`/api/accounts/${acc.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
     await refreshData();
   };
 
   const deleteAccount = async (id: string) => {
-    const { error } = await supabaseBrowser.from('accounts').delete().eq('id', id);
-    if (error) throw error;
+    await apiFetch(`/api/accounts/${id}`, { method: 'DELETE' });
     await refreshData();
   };
 
   const saveCustomCategories = async (categories: Record<string, string[]>) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
-
-    // Remove antigas do usuário e insere as novas
-    const { error: deleteErr } = await supabaseBrowser.from('custom_categories').delete().eq('user_id', uid);
-    if (deleteErr) throw deleteErr;
-
-    const toInsert = Object.entries(categories).map(([category_name, subcategories]) => ({
-      id: crypto.randomUUID(),
-      user_id: uid,
-      category_name,
-      subcategories,
-    }));
-
-    if (toInsert.length > 0) {
-      const { error: insertErr } = await supabaseBrowser.from('custom_categories').insert(toInsert);
-      if (insertErr) throw insertErr;
-    }
-
+    await apiFetch('/api/categories', {
+      method: 'PUT',
+      body: JSON.stringify(categories),
+    });
     await refreshData();
   };
 
   const addPromptNote = async (note: Omit<PromptNote, 'id'>) => {
-    const uid = session?.user?.id;
-    if (!uid) return;
-
-    const { error } = await supabaseBrowser.from('notes').insert({
-      id: crypto.randomUUID(),
-      user_id: uid,
-      title: note.title,
-      description: note.description,
+    await apiFetch('/api/notes', {
+      method: 'POST',
+      body: JSON.stringify({ title: note.title, description: note.description }),
     });
-    if (error) throw error;
     await refreshData();
   };
 
   const deletePromptNote = async (id: string) => {
-    const { error } = await supabaseBrowser.from('notes').delete().eq('id', id);
-    if (error) throw error;
+    await apiFetch(`/api/notes/${id}`, { method: 'DELETE' });
     await refreshData();
   };
 

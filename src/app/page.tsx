@@ -36,7 +36,10 @@ export default function LandingPage() {
     // Scroll animations
     const obs = new IntersectionObserver((entries) => {
       entries.forEach(e => {
-        if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); }
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          obs.unobserve(e.target);
+        }
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
     document.querySelectorAll('.fade-up').forEach(el => obs.observe(el));
@@ -59,19 +62,29 @@ export default function LandingPage() {
     if (!(window as any).INT_DEMOS_STATE) {
       (window as any).INT_DEMOS_STATE = { upload: false, accounts: false, categories: false, ai: false };
     }
-    (window as any).switchIntDemo = function(key: string) {
+    (window as any).switchIntDemo = function (key: string) {
       document.querySelectorAll('.int-nav-item').forEach(n => n.classList.remove('active'));
       const navEl = document.getElementById('int-nav-' + key);
       if (navEl) navEl.classList.add('active');
       document.querySelectorAll('.int-demos-panel').forEach(p => p.classList.remove('active'));
       const panel = document.getElementById('int-panel-' + key);
       if (panel) panel.classList.add('active');
-      
+
       const st = (window as any).INT_DEMOS_STATE;
       if (!st[key]) {
         st[key] = true;
-        const flows: Record<string, string> = { upload: 'UploadFlow', accounts: 'AccountsFlow', categories: 'CategoriesFlow', ai: 'AINotesFlow' };
-        const targets: Record<string, string> = { upload: 'demo-upload', accounts: 'demo-accounts', categories: 'demo-categories', ai: 'demo-ai' };
+        const flows: Record<string, string> = {
+          upload: 'UploadFlow',
+          accounts: 'AccountsFlow',
+          categories: 'CategoriesFlow',
+          ai: 'AINotesFlow'
+        };
+        const targets: Record<string, string> = {
+          upload: 'demo-upload',
+          accounts: 'demo-accounts',
+          categories: 'demo-categories',
+          ai: 'demo-ai'
+        };
         setTimeout(() => {
           const flowCls = (window as any)[flows[key]];
           if (flowCls) flowCls.init(targets[key]);
@@ -187,14 +200,14 @@ export default function LandingPage() {
                 </button>
                 {user ? (
                   <div style={{ position: 'relative' }}>
-                    <button 
-                      className="btn btn-ghost dropdown-toggle" 
+                    <button
+                      className="btn btn-ghost dropdown-toggle"
                       style={{ padding: '8px' }}
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
                       onBlur={() => setTimeout(() => setUserMenuOpen(false), 200)}
                     >
                       {user.user_metadata?.avatar_url && (
-                        <img src={user.user_metadata.avatar_url} alt="avatar" style={{ width: 32, height: 32, borderRadius: 8 }} />
+                        <img src={user.user_metadata.avatar_url} alt="avatar" style={{ width: 32, height: 32, borderRadius: 8 }} referrerPolicy="no-referrer" />
                       )}
                       <span className="user-name">{(user.user_metadata?.full_name || user.email || '').split(' ')[0]}</span>
                     </button>
@@ -280,7 +293,7 @@ export default function LandingPage() {
             {/* ── DEMOS ─────────────────────────────────────── */}
             <section className="sec interactive-section" id="demos-section">
               <div className="aurora-dots">
-                {[['8%','20%','.4s'],['22%','75%','1.2s'],['45%','12%','.8s'],['60%','55%','2s'],['75%','30%','.2s'],['88%','80%','1.6s']].map(([l,t,d],i) => (
+                {[['8%', '20%', '.4s'], ['22%', '75%', '1.2s'], ['45%', '12%', '.8s'], ['60%', '55%', '2s'], ['75%', '30%', '.2s'], ['88%', '80%', '1.6s']].map(([l, t, d], i) => (
                   <div key={i} className="aurora-dot" style={{ left: l, top: t, animationDelay: d }} />
                 ))}
               </div>
@@ -475,9 +488,6 @@ export default function LandingPage() {
         </div>
 
       </div>
-
-
-
     </>
   );
 }
