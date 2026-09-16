@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useUI } from '@/context/UIContext';
 import { useData, Account, PromptNote } from '@/context/DataContext';
 import { formatBRL, ACCOUNT_COLOR_PRESETS, PREDEFINED_CATEGORIES, uuid, calcBalance } from '@/lib/utils';
+import { supabaseBrowser } from '@/lib/supabaseBrowser';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function SettingsContent() {
