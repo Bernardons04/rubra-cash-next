@@ -14,7 +14,8 @@ export const PREDEFINED_CATEGORIES: Record<string, string[]> = {
   'Assinaturas': ['Jornal', 'Revista', 'Aplicativos'],
   'Seguros': ['Saúde', 'Carro', 'Residência', 'Vida'],
   'Impostos': ['IR', 'INSS', 'Emplacamento', 'Multas'],
-  'Investimentos': ['Ações', 'Cripto', 'Renda Fixa', 'Fundos', 'Dividendos', 'Resgate'],
+  'Investimentos': ['Ações', 'Cripto', 'Renda Fixa', 'Fundos'],
+  'Rendimentos': ['Dividendos', 'Juros', 'Rendimento de conta'],
   'Salário': ['CLT', 'Contrato', 'Comissão', 'Freelance'],
   'Compras': ['Arte e música', 'Coisas pra casa', 'Eletrônicos', 'Esporte e equipamentos', 'Eventos e atividades', 'Festas e encontros', 'Presentes', 'Roupas e acessórios'],
   'Celular': ['Plano', 'Recarga', 'Internet móvel'],
@@ -132,7 +133,7 @@ export function uuid(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0;
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
