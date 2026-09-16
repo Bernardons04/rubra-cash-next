@@ -46,6 +46,10 @@ interface DataContextProps {
   aiPromptNotes: PromptNote[];
   aiSettings: AISettings | null;
   loadingData: boolean;
+  refreshTransactions: () => Promise<void>;
+  refreshAccounts: () => Promise<void>;
+  refreshCategories: () => Promise<void>;
+  refreshNotes: () => Promise<void>;
   refreshData: () => Promise<void>;
   refreshAISettings: () => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id'> & { id?: string }) => Promise<void>;
@@ -111,21 +115,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return res.json();
   };
 
+  const refreshTransactions = async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await apiFetch('/api/transactions');
+      setTransactions(res.transactions || []);
+    } catch (err: any) {
+      console.error('Error refreshing transactions:', err);
+    }
+  };
+
+  const refreshAccounts = async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await apiFetch('/api/accounts');
+      setAccounts(res.accounts || []);
+    } catch (err: any) {
+      console.error('Error refreshing accounts:', err);
+    }
+  };
+
+  const refreshCategories = async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await apiFetch('/api/categories');
+      setCustomCategories(res.categories || {});
+    } catch (err: any) {
+      console.error('Error refreshing categories:', err);
+    }
+  };
+
+  const refreshNotes = async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await apiFetch('/api/notes');
+      setAiPromptNotes(res.notes || []);
+    } catch (err: any) {
+      console.error('Error refreshing notes:', err);
+    }
+  };
+
   const refreshData = async () => {
     if (!session?.access_token) return;
-
+    setLoadingData(true);
     try {
-      const [txRes, accRes, catRes, notesRes] = await Promise.all([
-        apiFetch('/api/transactions'),
-        apiFetch('/api/accounts'),
-        apiFetch('/api/categories'),
-        apiFetch('/api/notes'),
+      await Promise.all([
+        refreshTransactions(),
+        refreshAccounts(),
+        refreshCategories(),
+        refreshNotes(),
       ]);
-
-      setTransactions(txRes.transactions || []);
-      setAccounts(accRes.accounts || []);
-      setCustomCategories(catRes.categories || {});
-      setAiPromptNotes(notesRes.notes || []);
     } catch (err: any) {
       console.error('Error refreshing data:', err);
     } finally {
@@ -193,7 +232,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    await refreshData();
+    await refreshTransactions();
   };
 
   const updateTransaction = async (tx: Transaction) => {
@@ -214,12 +253,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
-    await refreshData();
+    await refreshTransactions();
   };
 
   const deleteTransaction = async (id: string) => {
     await apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    await refreshData();
+    await refreshTransactions();
   };
 
   const deleteTransactionsBatch = async (ids: string[]) => {
@@ -227,7 +266,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'DELETE',
       body: JSON.stringify({ ids }),
     });
-    await refreshData();
+    await refreshTransactions();
   };
 
   const saveTransactionsBatch = async (
@@ -258,7 +297,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    await refreshData();
+    await refreshTransactions();
   };
 
   const addAccount = async (acc: Omit<Account, 'id'>) => {
@@ -275,7 +314,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    await refreshData();
+    await refreshAccounts();
   };
 
   const updateAccount = async (acc: Account) => {
@@ -292,12 +331,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
-    await refreshData();
+    await refreshAccounts();
   };
 
   const deleteAccount = async (id: string) => {
     await apiFetch(`/api/accounts/${id}`, { method: 'DELETE' });
-    await refreshData();
+    await refreshAccounts();
   };
 
   const saveCustomCategories = async (categories: Record<string, string[]>) => {
@@ -305,7 +344,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'PUT',
       body: JSON.stringify(categories),
     });
-    await refreshData();
+    await refreshCategories();
   };
 
   const addPromptNote = async (note: Omit<PromptNote, 'id'>) => {
@@ -313,12 +352,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ title: note.title, description: note.description }),
     });
-    await refreshData();
+    await refreshNotes();
   };
 
   const deletePromptNote = async (id: string) => {
     await apiFetch(`/api/notes/${id}`, { method: 'DELETE' });
-    await refreshData();
+    await refreshNotes();
   };
 
   return (
@@ -330,6 +369,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         aiPromptNotes,
         aiSettings,
         loadingData,
+        refreshTransactions,
+        refreshAccounts,
+        refreshCategories,
+        refreshNotes,
         refreshData,
         refreshAISettings,
         addTransaction,
