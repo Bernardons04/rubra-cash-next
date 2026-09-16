@@ -171,7 +171,14 @@ export async function deleteAccount(
     throw new NotFoundError('Conta não encontrada.');
   }
 
-  await prisma.accounts.delete({
-    where: { id: accountId },
-  });
+  try {
+    await prisma.accounts.delete({
+      where: { id: accountId },
+    });
+  } catch (error: any) {
+    if (error.code === 'P2003') {
+      throw new ValidationError('Não foi possível excluir a conta pois ela possui transações vinculadas.');
+    }
+    throw error;
+  }
 }

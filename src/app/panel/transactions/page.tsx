@@ -48,6 +48,8 @@ export default function TransactionsPage() {
     date: today, category: '', categoryNew: '', subcategory: '',
     subcategoryNew: '', method: 'pix', accountId: '', counterpartAccountId: ''
   });
+  const [isSavingTx, setIsSavingTx] = useState(false);
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
 
   const [bulkForm, setBulkForm] = useState({
     type: '', direction: 'out', title: '', category: '', subcategory: '', accountId: ''
@@ -157,6 +159,7 @@ export default function TransactionsPage() {
     };
 
     try {
+      setIsSavingTx(true);
       if (editingTx) {
         await updateTransaction(newTx);
         setToast({ message: 'Transação atualizada!', type: 'success' });
@@ -164,21 +167,25 @@ export default function TransactionsPage() {
         await addTransaction(newTx);
         setToast({ message: 'Transação adicionada!', type: 'success' });
       }
+      setShowTxModal(false);
     } catch (err: any) {
       setToast({ message: 'Erro ao salvar: ' + err.message, type: 'error' });
-      return;
+    } finally {
+      setIsSavingTx(false);
     }
-    setShowTxModal(false);
   };
 
   const deleteTx = async (tx: Transaction) => {
     const confirmed = await showConfirm('Deletar transação', `Excluir "${tx.title}"?`);
     if (!confirmed) return;
+    setDeletingTxId(tx.id);
     try {
       await deleteTransaction(tx.id);
       setToast({ message: 'Transação removida', type: 'info' });
     } catch (err: any) {
       setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+    } finally {
+      setDeletingTxId(null);
     }
   };
 
@@ -650,8 +657,8 @@ export default function TransactionsPage() {
                           <button onClick={(e) => { e.stopPropagation(); openEditModal(tx); }} className={`cursor-pointer flex h-7 w-7 items-center justify-center rounded-md ${isDark ? 'bg-[#262626] text-zinc-300 hover:bg-[#333]' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
                             <i className="bi bi-pencil" />
                           </button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteTx(tx); }} className="cursor-pointer flex h-7 w-7 items-center justify-center rounded-md bg-[#ff4d6d1f] text-[#ff4d6d] hover:bg-[#ff4d6d33]">
-                            <i className="bi bi-trash" />
+                          <button onClick={(e) => { e.stopPropagation(); deleteTx(tx); }} disabled={deletingTxId === tx.id} className="cursor-pointer flex h-7 w-7 items-center justify-center rounded-md bg-[#ff4d6d1f] text-[#ff4d6d] hover:bg-[#ff4d6d33] disabled:opacity-50 disabled:cursor-not-allowed">
+                            {deletingTxId === tx.id ? <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-trash" />}
                           </button>
                         </div>
                       )}
@@ -827,7 +834,10 @@ export default function TransactionsPage() {
               )}
 
               <div className="mt-2 flex gap-2">
-                <button onClick={saveTx} className="flex-1 rounded-sm bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer">Salvar Transação</button>
+                <button onClick={saveTx} disabled={isSavingTx} className="flex-1 rounded-sm bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSavingTx ? <span className="mr-1 h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block align-middle" /> : null}
+                  {isSavingTx ? 'Salvando...' : 'Salvar Transação'}
+                </button>
                 <button onClick={() => setShowTxModal(false)} className={`rounded-sm border px-4 py-2 font-medium cursor-pointer ${isDark ? 'border-[#262626] bg-[#141414] hover:bg-[#1C1C1C]' : 'border-zinc-200 bg-white hover:bg-zinc-50'}`}>Cancelar</button>
               </div>
             </div>

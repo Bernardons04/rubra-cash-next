@@ -12,8 +12,8 @@ function SettingsContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'accounts';
 
-  const { theme, setToast, session, showConfirm } = useUI();
-  const { accounts, customCategories, aiPromptNotes, aiSettings, setAccounts, setCustomCategories, setAiPromptNotes, refreshData, refreshAISettings, transactions, setTransactions, addPromptNote, deletePromptNote } = useData();
+  const { theme, setToast, session, showConfirm, showAlert } = useUI();
+  const { accounts, customCategories, aiPromptNotes, aiSettings, setAccounts, setCustomCategories, setAiPromptNotes, refreshData, refreshAISettings, transactions, setTransactions, addPromptNote, deletePromptNote, addAccount, updateAccount, deleteAccount: deleteAccCtx, saveCustomCategories } = useData();
 
   const isDark = theme === 'dark';
   const currentUser = session?.user;
@@ -36,6 +36,8 @@ function SettingsContent() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [accForm, setAccForm] = useState({ name: '', color: '#4d9fff', emoji: '🏦', anchorDate: new Date().toISOString().split('T')[0], anchorBalance: '' });
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
 
   const [showVaultModal, setShowVaultModal] = useState(false);
   const [editingVault, setEditingVault] = useState<Account | null>(null);
@@ -69,32 +71,21 @@ function SettingsContent() {
       parentAccountId: null,
     };
 
-    let newAccs = [...accounts];
-    if (editingAccount) newAccs = newAccs.map(a => a.id === accId ? acc : a);
-    else newAccs.push(acc);
-    setAccounts(newAccs);
-
-    if (currentUser) {
-      const payload = { name: acc.name, color: acc.color, emoji: acc.emoji, anchor_date: acc.anchorDate, anchor_balance: acc.anchorBalance, parent_account_id: null, user_id: currentUser.id };
-      try {
-        if (editingAccount) {
-          const { error } = await supabaseBrowser.from('accounts').update(payload).eq('id', acc.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabaseBrowser.from('accounts').insert({ ...payload, id: acc.id });
-          if (error) throw error;
-        }
-        setToast({ message: editingAccount ? 'Conta atualizada!' : 'Conta criada!', type: 'success' });
-      } catch (err: any) {
-        setToast({ message: 'Erro: ' + err.message, type: 'error' });
-        if (!editingAccount) setAccounts(accounts.filter(a => a.id !== acc.id));
-        return;
+    setIsSavingAccount(true);
+    try {
+      if (editingAccount) {
+        await updateAccount(acc);
+        setToast({ message: 'Conta atualizada!', type: 'success' });
+      } else {
+        await addAccount(acc);
+        setToast({ message: 'Conta criada!', type: 'success' });
       }
-    } else {
-      setToast({ message: editingAccount ? 'Conta atualizada!' : 'Conta criada!', type: 'success' });
+      setShowAccountModal(false);
+    } catch (err: any) {
+      setToast({ message: 'Erro: ' + err.message, type: 'error' });
+    } finally {
+      setIsSavingAccount(false);
     }
-    setShowAccountModal(false);
-    refreshData();
   };
 
   const openVaultModal = (parentId: string, vault?: Account) => {
@@ -125,32 +116,21 @@ function SettingsContent() {
       parentAccountId: parentAccountIdForVault,
     };
 
-    let newAccs = [...accounts];
-    if (editingVault) newAccs = newAccs.map(a => a.id === accId ? acc : a);
-    else newAccs.push(acc);
-    setAccounts(newAccs);
-
-    if (currentUser) {
-      const payload = { name: acc.name, color: acc.color, emoji: acc.emoji, anchor_date: acc.anchorDate, anchor_balance: acc.anchorBalance, parent_account_id: parentAccountIdForVault, user_id: currentUser.id };
-      try {
-        if (editingVault) {
-          const { error } = await supabaseBrowser.from('accounts').update(payload).eq('id', acc.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabaseBrowser.from('accounts').insert({ ...payload, id: acc.id });
-          if (error) throw error;
-        }
-        setToast({ message: editingVault ? 'Cofrinho atualizado!' : 'Cofrinho criado!', type: 'success' });
-      } catch (err: any) {
-        setToast({ message: 'Erro: ' + err.message, type: 'error' });
-        if (!editingVault) setAccounts(accounts.filter(a => a.id !== acc.id));
-        return;
+    setIsSavingAccount(true);
+    try {
+      if (editingVault) {
+        await updateAccount(acc);
+        setToast({ message: 'Cofrinho atualizado!', type: 'success' });
+      } else {
+        await addAccount(acc);
+        setToast({ message: 'Cofrinho criado!', type: 'success' });
       }
-    } else {
-      setToast({ message: editingVault ? 'Cofrinho atualizado!' : 'Cofrinho criado!', type: 'success' });
+      setShowVaultModal(false);
+    } catch (err: any) {
+      setToast({ message: 'Erro: ' + err.message, type: 'error' });
+    } finally {
+      setIsSavingAccount(false);
     }
-    setShowVaultModal(false);
-    refreshData();
   };
 
   const deleteAccount = async (acc: Account) => {
@@ -160,41 +140,37 @@ function SettingsContent() {
       setToast({ message: `Esta conta possui cofrinhos ativos: ${list}. Exclua-os ou mova-os antes de excluir a conta.`, type: 'error' });
       return;
     }
-    const confirmed = await showConfirm('Excluir conta', `Excluir "${acc.name}"? As transações vinculadas se tornarão sem conta.`);
+    const confirmed = await showConfirm('Excluir conta', `Excluir "${acc.name}"?`);
     if (!confirmed) return;
+    setDeletingAccountId(acc.id);
     try {
-      setAccounts(accounts.filter(a => a.id !== acc.id));
-
-      if (currentUser) {
-        const { error } = await supabaseBrowser.from('accounts').delete().eq('id', acc.id);
-        if (error) { setToast({ message: 'Erro ao excluir conta: ' + error.message, type: 'error' }); return; }
-      }
+      await deleteAccCtx(acc.id);
       setToast({ message: 'Conta excluída', type: 'info' });
-      refreshData();
     } catch (err: any) {
-      setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível excluir', err.message || 'Erro ao excluir conta.', 'error');
+    } finally {
+      setDeletingAccountId(null);
     }
   };
 
   const deleteVault = async (vault: Account) => {
-    const confirmed = await showConfirm('Excluir cofrinho', `Excluir cofrinho "${vault.name}"? As transações vinculadas se tornarão sem conta.`);
+    const confirmed = await showConfirm('Excluir cofrinho', `Excluir cofrinho "${vault.name}"?`);
     if (!confirmed) return;
+    setDeletingAccountId(vault.id);
     try {
-      setAccounts(accounts.filter(a => a.id !== vault.id));
-
-      if (currentUser) {
-        const { error } = await supabaseBrowser.from('accounts').delete().eq('id', vault.id);
-        if (error) { setToast({ message: 'Erro ao excluir: ' + error.message, type: 'error' }); return; }
-      }
+      await deleteAccCtx(vault.id);
       setToast({ message: 'Cofrinho excluído', type: 'info' });
-      refreshData();
     } catch (err: any) {
-      setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível excluir', err.message || 'Erro ao excluir cofre.', 'error');
+    } finally {
+      setDeletingAccountId(null);
     }
   };
 
   // Categories
   const [catForm, setCatForm] = useState({ name: '', subcatInput: '', subcats: [] as string[] });
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const [deletingCategoryName, setDeletingCategoryName] = useState<string | null>(null);
 
   const addSubcat = () => {
     const v = catForm.subcatInput.trim();
@@ -209,11 +185,11 @@ function SettingsContent() {
 
   const saveCategoriesToDB = async (cats: any) => {
     if (!currentUser) return;
-    for (const [name, subs] of Object.entries(cats)) {
-      await supabaseBrowser.from('custom_categories').upsert(
-        { user_id: currentUser.id, category_name: name, subcategories: subs },
-        { onConflict: 'user_id,category_name' }
-      );
+    try {
+      await saveCustomCategories(cats);
+    } catch (err: any) {
+      console.error(err);
+      throw err;
     }
   };
 
@@ -223,28 +199,34 @@ function SettingsContent() {
     if (PREDEFINED_CATEGORIES[name]) { setToast({ message: 'Categoria já existe nas padrões', type: 'error' }); return; }
     const subs = [...catForm.subcats];
 
+    setIsSavingCategory(true);
     const updated = { ...customCategories, [name]: subs };
-    setCustomCategories(updated);
-    if (currentUser) await saveCategoriesToDB(updated);
-    setToast({ message: 'Categoria salva!', type: 'success' });
-    clearCatForm();
-    refreshData();
+    try {
+      if (currentUser) await saveCategoriesToDB(updated);
+      setToast({ message: 'Categoria salva!', type: 'success' });
+      clearCatForm();
+    } catch (err: any) {
+      setToast({ message: 'Erro ao salvar categoria: ' + err.message, type: 'error' });
+    } finally {
+      setIsSavingCategory(false);
+    }
   };
 
   const deleteCategory = async (cat: string) => {
     const confirmed = await showConfirm('Excluir categoria', `Excluir categoria "${cat}"?`);
     if (!confirmed) return;
+    setDeletingCategoryName(cat);
     try {
       const updated = { ...customCategories };
       delete updated[cat];
-      setCustomCategories(updated);
       if (currentUser) {
-        await supabaseBrowser.from('custom_categories').delete().eq('user_id', currentUser.id).eq('category_name', cat);
+        await saveCategoriesToDB(updated);
       }
       setToast({ message: 'Categoria excluída', type: 'info' });
-      refreshData();
     } catch (err: any) {
       setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+    } finally {
+      setDeletingCategoryName(null);
     }
   };
 
@@ -412,9 +394,11 @@ function SettingsContent() {
                           </div>
                         </div>
                         <div className="flex shrink-0 gap-1.5">
-                          <button onClick={() => openVaultModal(acc.id)} className={btnIconSm} title="Adicionar cofrinho"><i className="bi bi-plus" /></button>
-                          <button onClick={() => openAccountModal(acc)} className={btnIconSm}><i className="bi bi-pencil" /></button>
-                          <button onClick={() => deleteAccount(acc)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                          <button onClick={() => openVaultModal(acc.id)} disabled={deletingAccountId === acc.id} className={btnIconSm} title="Adicionar cofrinho"><i className="bi bi-plus" /></button>
+                          <button onClick={() => openAccountModal(acc)} disabled={deletingAccountId === acc.id} className={btnIconSm}><i className="bi bi-pencil" /></button>
+                          <button onClick={() => deleteAccount(acc)} disabled={deletingAccountId === acc.id} className={btnDangerSm}>
+                            {deletingAccountId === acc.id ? <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-trash" />}
+                          </button>
                         </div>
                       </div>
 
@@ -430,8 +414,10 @@ function SettingsContent() {
                                 </div>
                               </div>
                               <div className="flex shrink-0 gap-1.5">
-                                <button onClick={() => openVaultModal(acc.id, v)} className={btnIconSm}><i className="bi bi-pencil" /></button>
-                                <button onClick={() => deleteVault(v)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                                <button onClick={() => openVaultModal(acc.id, v)} disabled={deletingAccountId === v.id} className={btnIconSm}><i className="bi bi-pencil" /></button>
+                                <button onClick={() => deleteVault(v)} disabled={deletingAccountId === v.id} className={btnDangerSm}>
+                                  {deletingAccountId === v.id ? <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-trash" />}
+                                </button>
                               </div>
                             </div>
                           ))}
@@ -478,7 +464,10 @@ function SettingsContent() {
                 )}
               </div>
               <div className="flex gap-2">
-                <button onClick={saveCategory} className={btnPrimary}><i className="bi bi-check-lg" /> Salvar categoria</button>
+                <button onClick={saveCategory} disabled={isSavingCategory} className={`${btnPrimary} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                  {isSavingCategory ? <span className="mr-1 h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-check-lg" />}
+                  {isSavingCategory ? 'Salvando...' : 'Salvar categoria'}
+                </button>
                 <button onClick={clearCatForm} className={btnSecondary}><i className="bi bi-x-lg" /> Limpar</button>
               </div>
             </div>
@@ -493,7 +482,9 @@ function SettingsContent() {
                       <span className="text-[13px] font-semibold">{cat}</span>
                       <div className="flex gap-1.5">
                         <button onClick={() => editCategory(cat)} className={btnIconSm}><i className="bi bi-pencil" /></button>
-                        <button onClick={() => deleteCategory(cat)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                        <button onClick={() => deleteCategory(cat)} disabled={deletingCategoryName === cat} className={btnDangerSm}>
+                          {deletingCategoryName === cat ? <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-trash" />}
+                        </button>
                       </div>
                     </div>
                     {subs.length > 0 && (
@@ -719,7 +710,9 @@ function SettingsContent() {
                 </div>
               </div>
               <div className="mt-2 flex gap-2">
-                <button onClick={saveAccount} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer"><i className="bi bi-check-lg" /> Salvar Conta</button>
+                <button onClick={saveAccount} disabled={isSavingAccount} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSavingAccount ? <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin inline-block align-middle mr-2" /> : <i className="bi bi-check-lg" />} Salvar Conta
+                </button>
                 <button onClick={() => setShowAccountModal(false)} className={`rounded-xl border px-4 py-2 font-medium border-[var(--border)] bg-[var(--card)] cursor-pointer text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]`}>Cancelar</button>
               </div>
             </div>
@@ -753,7 +746,9 @@ function SettingsContent() {
                 </div>
               </div>
               <div className="mt-2 flex gap-2">
-                <button onClick={saveVault} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer"><i className="bi bi-check-lg" /> Salvar Cofrinho</button>
+                <button onClick={saveVault} disabled={isSavingAccount} className="flex-1 rounded-xl bg-[var(--accent)] px-4 py-2 font-medium text-white hover:brightness-110 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSavingAccount ? <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin inline-block align-middle mr-2" /> : <i className="bi bi-check-lg" />} Salvar Cofrinho
+                </button>
                 <button onClick={() => setShowVaultModal(false)} className={`rounded-xl border px-4 py-2 font-medium border-[var(--border)] bg-[var(--card)] cursor-pointer text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]`}>Cancelar</button>
               </div>
             </div>
