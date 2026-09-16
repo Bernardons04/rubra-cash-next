@@ -29,12 +29,18 @@ export function calcBalance(accountId: string, account: Account, transactions: T
   let delta = 0;
   transactions.forEach(tx => {
     if (!tx.date || tx.date <= account.anchorDate) return;
-    if (tx.accountId !== accountId) return;
-    if (tx.type === 'income') delta += tx.amount;
-    else if (tx.type === 'expense') delta -= tx.amount;
-    else if (tx.type === 'transfer') {
-      if (tx.direction === 'out') delta -= tx.amount;
-      else if (tx.direction === 'in') delta += tx.amount;
+    
+    if (tx.accountId === accountId) {
+      if (tx.type === 'income') delta += tx.amount;
+      else if (tx.type === 'expense') delta -= tx.amount;
+      else if (tx.type === 'transfer') {
+        if (tx.direction === 'out') delta -= tx.amount;
+        else if (tx.direction === 'in') delta += tx.amount;
+      }
+    } else if (tx.counterpartAccountId === accountId && tx.type === 'transfer') {
+      // Se saiu da conta principal, entrou nesta (e vice-versa)
+      if (tx.direction === 'out') delta += tx.amount;
+      else if (tx.direction === 'in') delta -= tx.amount;
     }
   });
   return base + delta;
