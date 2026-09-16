@@ -20,6 +20,7 @@ interface UIContextProps {
   toggleValuesHidden: () => void;
   setToast: (toast: ToastInfo | null) => void;
   showConfirm: (title: string, message: string) => Promise<boolean>;
+  showAlert: (title: string, message: string, type?: 'success' | 'error' | 'warning' | 'info') => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -117,6 +118,21 @@ export function UIProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const [alertDialog, setAlertDialog] = useState<{ title: string; message: string; type: 'success' | 'error' | 'warning' | 'info'; resolve: () => void } | null>(null);
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info'): Promise<void> => {
+    return new Promise((resolve) => {
+      setAlertDialog({ title, message, type, resolve });
+    });
+  };
+
+  const handleAlertClose = () => {
+    if (alertDialog) {
+      alertDialog.resolve();
+      setAlertDialog(null);
+    }
+  };
+
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 3000);
@@ -136,6 +152,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
         toggleValuesHidden,
         setToast,
         showConfirm,
+        showAlert,
         logout,
       }}
     >
@@ -151,6 +168,40 @@ export function UIProvider({ children }: { children: ReactNode }) {
               <button onClick={() => handleConfirm(false)} className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-[10px] py-[5px] text-[12px] font-medium text-[var(--text-2)] transition-colors hover:border-[var(--border-soft)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]">Cancelar</button>
               <button onClick={() => handleConfirm(true)} className="rounded-[var(--radius-sm)] border border-transparent bg-[var(--red-dim)] px-[10px] py-[5px] text-[12px] font-medium text-[var(--red)] transition-colors hover:bg-[var(--red)] hover:text-white">Confirmar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Alert Modal */}
+      {alertDialog && (
+        <div className="fixed inset-0 z-[2001] flex items-center justify-center bg-black/80 backdrop-blur-[4px]">
+          <div className="w-full max-w-[380px] rounded-2xl border border-[var(--border-soft)] bg-[var(--card)] p-8 shadow-2xl flex flex-col items-center text-center">
+            <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl ${
+              alertDialog.type === 'success' ? 'bg-[#1a2e1a] text-[#75d934]' :
+              alertDialog.type === 'error'   ? 'bg-[#2e1a1a] text-[#ff4d6d]' :
+              alertDialog.type === 'warning' ? 'bg-[#2e2a1a] text-[#f5a623]' :
+                                               'bg-[#1a1a2e] text-[#4d9fff]'
+            }`}>
+              <i className={`bi ${
+                alertDialog.type === 'success' ? 'bi-check-circle-fill' :
+                alertDialog.type === 'error'   ? 'bi-x-circle-fill' :
+                alertDialog.type === 'warning' ? 'bi-exclamation-triangle-fill' :
+                                                 'bi-info-circle-fill'
+              }`} />
+            </div>
+            <h4 className="mb-2 text-[18px] font-bold text-[var(--text)]">{alertDialog.title}</h4>
+            <p className="mb-6 text-[13px] leading-relaxed text-[var(--text-2)]">{alertDialog.message}</p>
+            <button
+              onClick={handleAlertClose}
+              className={`w-full rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:brightness-110 ${
+                alertDialog.type === 'success' ? 'bg-[#75d934] text-black' :
+                alertDialog.type === 'error'   ? 'bg-[#ff4d6d] text-white' :
+                alertDialog.type === 'warning' ? 'bg-[#f5a623] text-black' :
+                                                 'bg-[#4d9fff] text-white'
+              }`}
+            >
+              OK
+            </button>
           </div>
         </div>
       )}

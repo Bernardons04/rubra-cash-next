@@ -14,7 +14,7 @@ const NAV_ITEMS = [
 export default function PanelShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, loading, valuesHidden, theme, toggleTheme, toggleValuesHidden, logout, showConfirm } = useUI();
+  const { session, loading, valuesHidden, theme, toggleTheme, toggleValuesHidden, logout, showConfirm, toast } = useUI();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -334,6 +334,25 @@ export default function PanelShell({ children }: { children: React.ReactNode }) 
           </main>
         </div>
       </div>
+      {/* Global Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-[9999] -translate-x-1/2 pointer-events-none">
+          <div className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium shadow-2xl border ${
+            toast.type === 'success' ? 'bg-[#1a2e1a] border-[#2d5a2d] text-[#75d934]' :
+            toast.type === 'error'   ? 'bg-[#2e1a1a] border-[#5a2d2d] text-[#ff4d6d]' :
+            toast.type === 'warning' ? 'bg-[#2e2a1a] border-[#5a4d2d] text-[#f5a623]' :
+                                       'bg-[#1a1a2e] border-[#2d2d5a] text-[#4d9fff]'
+          }`}>
+            <i className={`bi ${
+              toast.type === 'success' ? 'bi-check-circle-fill' :
+              toast.type === 'error'   ? 'bi-x-circle-fill' :
+              toast.type === 'warning' ? 'bi-exclamation-triangle-fill' :
+                                         'bi-info-circle-fill'
+            }`} />
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
