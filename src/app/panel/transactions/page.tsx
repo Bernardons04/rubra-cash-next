@@ -15,8 +15,8 @@ import { useRouter } from 'next/navigation';
 
 export default function TransactionsPage() {
   const router = useRouter();
-  const { theme, setToast, session, showConfirm } = useUI();
-  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsBatch } = useData();
+  const { theme, setToast, session, showConfirm, showAlert } = useUI();
+  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsBatch, bulkUpdateTransactions } = useData();
 
   const currentUser = session?.user;
 
@@ -54,6 +54,9 @@ export default function TransactionsPage() {
   const [bulkForm, setBulkForm] = useState({
     type: '', direction: 'out', title: '', category: '', subcategory: '', accountId: ''
   });
+  const [isBulkingDelete, setIsBulkingDelete] = useState(false);
+  const [isBulkingEdit, setIsBulkingEdit] = useState(false);
+  const [isConfirmingImport, setIsConfirmingImport] = useState(false);
 
   // AI Import State
   const [aiFileContent, setAiFileContent] = useState('');
@@ -169,7 +172,7 @@ export default function TransactionsPage() {
       }
       setShowTxModal(false);
     } catch (err: any) {
-      setToast({ message: 'Erro ao salvar: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao salvar transação', 'error');
     } finally {
       setIsSavingTx(false);
     }
@@ -183,7 +186,7 @@ export default function TransactionsPage() {
       await deleteTransaction(tx.id);
       setToast({ message: 'Transação removida', type: 'info' });
     } catch (err: any) {
-      setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível excluir', err.message || 'Erro ao excluir transação', 'error');
     } finally {
       setDeletingTxId(null);
     }
@@ -222,12 +225,15 @@ export default function TransactionsPage() {
     if (!n) return;
     const confirmed = await showConfirm('Excluir em lote', `Excluir ${n} transação${n !== 1 ? 's' : ''}?`);
     if (!confirmed) return;
+    setIsBulkingDelete(true);
     try {
       await deleteTransactionsBatch(selectedIds);
       exitSelectionMode();
       setToast({ message: `${n} transações excluídas`, type: 'info' });
     } catch (err: any) {
-      setToast({ message: 'Erro ao excluir em lote: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível excluir', err.message || 'Erro ao excluir em lote', 'error');
+    } finally {
+      setIsBulkingDelete(false);
     }
   };
 
@@ -251,24 +257,22 @@ export default function TransactionsPage() {
       else if (f.accountId) u.accountId = f.accountId;
       return u;
     });
-    setTransactions(newTxs);
 
     if (currentUser && ids.length) {
+      setIsBulkingEdit(true);
       try {
         const updated = newTxs.filter(tx => ids.includes(tx.id));
-        const results = await Promise.all(updated.map(tx =>
-          supabaseBrowser.from('transactions').update({
-            title: tx.title, type: tx.type, direction: tx.direction ?? null,
-            category: tx.category, subcategory: tx.subcategory || null, account_id: tx.accountId || null
-          }).eq('id', tx.id)
-        ));
-        const errs = results.filter(r => r.error);
-        if (errs.length) throw new Error(errs[0].error?.message);
-      } catch (err: any) { setToast({ message: 'Erro ao atualizar: ' + err.message, type: 'error' }); return; }
+        await bulkUpdateTransactions(updated);
+        setTransactions(newTxs);
+        setShowBulkModal(false);
+        exitSelectionMode();
+        setToast({ message: `${ids.length} transações atualizadas!`, type: 'success' });
+      } catch (err: any) { 
+        await showAlert('Não foi possível salvar', err.message || 'Erro ao atualizar em lote', 'error');
+      } finally {
+        setIsBulkingEdit(false);
+      }
     }
-    setShowBulkModal(false);
-    exitSelectionMode();
-    setToast({ message: `${ids.length} transações atualizadas!`, type: 'success' });
   };
 
   // AI Methods
@@ -425,30 +429,20 @@ export default function TransactionsPage() {
   const confirmImport = async () => {
     if (!currentUser) { setToast({ message: 'Você não está logado!', type: 'error' }); return; }
     if (!pendingTxs.length) return;
+    setIsConfirmingImport(true);
     try {
-      const batchId = uuid();
-      const { error: batchErr } = await supabaseBrowser.from('import_batches').insert({
-        id: batchId, user_id: currentUser.id, file_name: aiFileName,
-        file_size: aiFileContent.length, transaction_count: pendingTxs.length,
-        imported_at: new Date().toISOString()
+      await saveTransactionsBatch(pendingTxs, {
+        name: aiFileName,
+        type: 'ai_import',
+        raw_text: aiFileContent
       });
-      if (batchErr) throw batchErr;
-
-      const toInsert = pendingTxs.map(tx => ({
-        id: uuid(), user_id: currentUser.id, title: tx.title, amount: tx.amount, type: tx.type,
-        direction: tx.direction || null, date: tx.date, category: tx.category || 'Outros',
-        subcategory: tx.subcategory || null, method: tx.method || 'other', account_id: tx.accountId || null,
-        counterpart_account_id: tx.counterpartAccountId || null,
-        import_batch_id: batchId, created_at: new Date().toISOString()
-      }));
-
-      const { error: txErr } = await supabaseBrowser.from('transactions').insert(toInsert);
-      if (txErr) throw txErr;
-
       setToast({ message: `✅ ${pendingTxs.length} transações salvas!`, type: 'success' });
       cancelImport();
-      refreshData();
-    } catch (err: any) { setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' }); }
+    } catch (err: any) { 
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao salvar importação', 'error');
+    } finally {
+      setIsConfirmingImport(false);
+    }
   };
 
   const flattenedList = useMemo(() => {
@@ -702,8 +696,8 @@ export default function TransactionsPage() {
           <button onClick={openBulkEdit} className={`cursor-pointer flex items-center justify-center gap-[6px] rounded-[8px] border px-[10px] py-[6px] text-[13px] font-medium transition-colors ${isDark ? 'bg-[#141414] border-[#262626] text-[#A3A3A3] hover:bg-[#000000] hover:text-[#F0F0F0] hover:border-[#333333]' : 'bg-[#f4f4f4] border-[#E5E5E5] text-[#525252] hover:bg-[#ffffff] hover:text-[#0A0A0A] hover:border-[#e8e8f8]'}`}>
             <i className="bi bi-pencil-square" /> Editar em lote
           </button>
-          <button onClick={bulkDelete} className="cursor-pointer flex items-center justify-center gap-[6px] rounded-[8px] border border-transparent bg-[#ff4d6d18] px-[10px] py-[6px] text-[13px] font-medium text-[#ff4d6d] transition-colors hover:bg-[#ff4d6d] hover:text-white">
-            <i className="bi bi-trash" /> Excluir
+          <button onClick={bulkDelete} disabled={isBulkingDelete} className="cursor-pointer flex items-center justify-center gap-[6px] rounded-[8px] border border-transparent bg-[#ff4d6d18] px-[10px] py-[6px] text-[13px] font-medium text-[#ff4d6d] transition-colors hover:bg-[#ff4d6d] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+            {isBulkingDelete ? <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-trash" />} Excluir
           </button>
           <button onClick={exitSelectionMode} className={`cursor-pointer flex items-center justify-center gap-[6px] rounded-[8px] border px-[10px] py-[6px] text-[13px] font-medium transition-colors ${isDark ? 'bg-[#141414] border-[#262626] text-[#A3A3A3] hover:bg-[#000000] hover:text-[#F0F0F0] hover:border-[#333333]' : 'bg-[#f4f4f4] border-[#E5E5E5] text-[#525252] hover:bg-[#ffffff] hover:text-[#0A0A0A] hover:border-[#e8e8f8]'}`}>
             <i className="bi bi-x-lg" /> Cancelar
@@ -972,8 +966,8 @@ export default function TransactionsPage() {
                   </p>
 
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={confirmImport} className="flex items-center gap-2 rounded-sm bg-zinc-800 px-4 py-2 font-medium text-white hover:bg-zinc-700">
-                      <i className="bi bi-check-lg" /> Confirmar Importação
+                    <button onClick={confirmImport} disabled={isConfirmingImport} className="flex items-center gap-2 rounded-sm bg-zinc-800 px-4 py-2 font-medium text-white hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                      {isConfirmingImport ? <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-check-lg" />} Confirmar Importação
                     </button>
                     <button onClick={() => setPendingTxs([])} className={`flex items-center gap-2 rounded-sm border px-4 py-2 font-medium ${isDark ? 'border-[#262626] bg-[#141414] hover:bg-[#1C1C1C]' : 'border-zinc-200 bg-white hover:bg-zinc-50'}`}>
                       <i className="bi bi-arrow-clockwise" /> Tentar novamente
@@ -1065,7 +1059,9 @@ export default function TransactionsPage() {
               </div>
 
               <div className="mt-2 flex gap-2">
-                <button onClick={saveBulkEdit} className="flex-1 cursor-pointer rounded-sm bg-[var(--accent)] px-4 py-2 font-medium text-white transition-colors hover:brightness-110"><i className="bi bi-check-all" /> Aplicar a todas</button>
+                <button onClick={saveBulkEdit} disabled={isBulkingEdit} className="flex-1 cursor-pointer rounded-sm bg-[var(--accent)] px-4 py-2 font-medium text-white transition-colors hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2">
+                  {isBulkingEdit ? <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-check-all" />} Aplicar a todas
+                </button>
                 <button onClick={() => setShowBulkModal(false)} className={`cursor-pointer rounded-sm border px-4 py-2 font-medium ${isDark ? 'border-[#262626] bg-[#141414] hover:bg-[#1C1C1C]' : 'border-zinc-200 bg-white hover:bg-zinc-50'}`}>Cancelar</button>
               </div>
             </div>

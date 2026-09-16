@@ -57,6 +57,7 @@ interface DataContextProps {
   deleteTransaction: (id: string) => Promise<void>;
   deleteTransactionsBatch: (ids: string[]) => Promise<void>;
   saveTransactionsBatch: (txs: Omit<Transaction, 'id'>[], batchMetadata: { name: string; type: string; raw_text: string }) => Promise<void>;
+  bulkUpdateTransactions: (txs: Transaction[]) => Promise<void>;
   addAccount: (acc: Omit<Account, 'id'>) => Promise<void>;
   updateAccount: (acc: Account) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
@@ -300,6 +301,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await refreshTransactions();
   };
 
+  const bulkUpdateTransactions = async (txs: Transaction[]) => {
+    // Instead of raw supabase updates, we loop through the API to update each transaction.
+    // This maintains auth headers, logging, and error handling from apiFetch.
+    await Promise.all(txs.map(async (tx) => {
+      const payload = {
+        title: tx.title,
+        amount: tx.amount,
+        type: tx.type,
+        date: tx.date,
+        category: tx.category || null,
+        subcategory: tx.subcategory || null,
+        method: tx.method || null,
+        direction: tx.direction || null,
+        accountId: tx.accountId || null,
+        counterpartAccountId: tx.counterpartAccountId || null,
+      };
+      await apiFetch(`/api/transactions/${tx.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    }));
+    await refreshTransactions();
+  };
+
   const addAccount = async (acc: Omit<Account, 'id'>) => {
     const payload = {
       name: acc.name,
@@ -380,6 +405,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         deleteTransaction,
         deleteTransactionsBatch,
         saveTransactionsBatch,
+        bulkUpdateTransactions,
         addAccount,
         updateAccount,
         deleteAccount,

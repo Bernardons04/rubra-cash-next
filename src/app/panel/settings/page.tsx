@@ -206,7 +206,7 @@ function SettingsContent() {
       setToast({ message: 'Categoria salva!', type: 'success' });
       clearCatForm();
     } catch (err: any) {
-      setToast({ message: 'Erro ao salvar categoria: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao salvar categoria', 'error');
     } finally {
       setIsSavingCategory(false);
     }
@@ -235,6 +235,7 @@ function SettingsContent() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteEditForm, setNoteEditForm] = useState({ title: '', description: '' });
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [isEditingNote, setIsEditingNote] = useState(false);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const clearNoteForm = () => setNoteForm({ title: '', description: '' });
@@ -249,7 +250,7 @@ function SettingsContent() {
       setToast({ message: 'Nota adicionada!', type: 'success' });
       clearNoteForm();
     } catch (err: any) {
-      setToast({ message: 'Erro ao adicionar nota: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao adicionar nota', 'error');
     } finally {
       setIsSavingNote(false);
     }
@@ -261,6 +262,7 @@ function SettingsContent() {
     const { title, description } = noteEditForm;
     if (!title.trim() || !description.trim()) { setToast({ message: 'Preencha título e descrição', type: 'warning' }); return; }
 
+    setIsEditingNote(true);
     try {
       // Delete the old note and re-create it with updated content
       await deletePromptNote(note.id);
@@ -268,7 +270,9 @@ function SettingsContent() {
       setToast({ message: 'Nota atualizada!', type: 'success' });
       setEditingNoteId(null);
     } catch (err: any) {
-      setToast({ message: 'Erro ao atualizar nota: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao atualizar nota', 'error');
+    } finally {
+      setIsEditingNote(false);
     }
   };
 
@@ -328,7 +332,7 @@ function SettingsContent() {
       refreshAISettings();
     } catch (err: any) {
       setAiSaveError(err.message);
-      setToast({ message: 'Erro: ' + err.message, type: 'error' });
+      await showAlert('Não foi possível salvar', err.message || 'Erro ao salvar configurações de IA', 'error');
     } finally {
       setAiSaving(false);
     }
@@ -554,7 +558,9 @@ function SettingsContent() {
                         <input type="text" className={inputBase} value={noteEditForm.title} onChange={e => setNoteEditForm({ ...noteEditForm, title: e.target.value })} />
                         <textarea className={`${inputBase} resize-y`} rows={4} value={noteEditForm.description} onChange={e => setNoteEditForm({ ...noteEditForm, description: e.target.value })} />
                         <div className="flex gap-1.5">
-                          <button onClick={() => confirmEditNote(note)} className="flex items-center gap-1 rounded-sm bg-[var(--accent)] py-[5px] px-[10px] text-xs text-white hover:brightness-110 cursor-pointer"><i className="bi bi-check-lg" /> Salvar</button>
+                          <button onClick={() => confirmEditNote(note)} disabled={isEditingNote} className="flex items-center gap-1 rounded-sm bg-[var(--accent)] py-[5px] px-[10px] text-xs text-white hover:brightness-110 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isEditingNote ? <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> : <i className="bi bi-check-lg" />} Salvar
+                          </button>
                           <button onClick={() => setEditingNoteId(null)} className="flex items-center justify-center rounded-sm bg-[var(--card)] border border-[var(--border)] py-[5px] px-[10px] cursor-pointer text-xs text-[var(--text-2)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]"><i className="bi bi-x-lg" /></button>
                         </div>
                       </div>
