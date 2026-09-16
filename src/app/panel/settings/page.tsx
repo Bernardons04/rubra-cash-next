@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useUI } from '@/context/UIContext';
 import { useData, Account, PromptNote } from '@/context/DataContext';
 import { formatBRL, ACCOUNT_COLOR_PRESETS, PREDEFINED_CATEGORIES, uuid, calcBalance } from '@/lib/utils';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 function SettingsContent() {
@@ -13,7 +12,7 @@ function SettingsContent() {
   const initialTab = searchParams.get('tab') || 'accounts';
 
   const { theme, setToast, session, showConfirm } = useUI();
-  const { accounts, customCategories, aiPromptNotes, aiSettings, setAccounts, setCustomCategories, setAiPromptNotes, refreshData, refreshAISettings, transactions, setTransactions } = useData();
+  const { accounts, customCategories, aiPromptNotes, aiSettings, setAccounts, setCustomCategories, setAiPromptNotes, refreshData, refreshAISettings, transactions, setTransactions, addPromptNote, deletePromptNote } = useData();
 
   const isDark = theme === 'dark';
   const currentUser = session?.user;
@@ -252,26 +251,25 @@ function SettingsContent() {
   const [noteForm, setNoteForm] = useState({ title: '', description: '' });
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteEditForm, setNoteEditForm] = useState({ title: '', description: '' });
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const clearNoteForm = () => setNoteForm({ title: '', description: '' });
-
-  const saveNotesToDB = async (notes: PromptNote[]) => {
-    if (!currentUser) return;
-    await supabaseBrowser.from('notes').delete().eq('user_id', currentUser.id);
-    await supabaseBrowser.from('notes').insert(notes.map(n => ({ ...n, user_id: currentUser.id })));
-  };
 
   const saveNote = async () => {
     const { title, description } = noteForm;
     if (!title.trim() || !description.trim()) { setToast({ message: 'Preencha título e descrição', type: 'warning' }); return; }
 
-    const newNote = { id: uuid(), title: title.trim(), description: description.trim() };
-    const updated = [...aiPromptNotes, newNote];
-    setAiPromptNotes(updated);
-    if (currentUser) await saveNotesToDB(updated);
-    setToast({ message: 'Nota adicionada!', type: 'success' });
-    clearNoteForm();
-    refreshData();
+    setIsSavingNote(true);
+    try {
+      await addPromptNote({ title: title.trim(), description: description.trim() });
+      setToast({ message: 'Nota adicionada!', type: 'success' });
+      clearNoteForm();
+    } catch (err: any) {
+      setToast({ message: 'Erro ao adicionar nota: ' + err.message, type: 'error' });
+    } finally {
+      setIsSavingNote(false);
+    }
   };
 
   const startEditNote = (note: PromptNote) => { setEditingNoteId(note.id); setNoteEditForm({ title: note.title, description: note.description }); };
@@ -280,25 +278,28 @@ function SettingsContent() {
     const { title, description } = noteEditForm;
     if (!title.trim() || !description.trim()) { setToast({ message: 'Preencha título e descrição', type: 'warning' }); return; }
 
-    const updated = aiPromptNotes.map(n => n.id === note.id ? { ...n, title, description } : n);
-    setAiPromptNotes(updated);
-    if (currentUser) await saveNotesToDB(updated);
-    setToast({ message: 'Nota atualizada!', type: 'success' });
-    setEditingNoteId(null);
-    refreshData();
+    try {
+      // Delete the old note and re-create it with updated content
+      await deletePromptNote(note.id);
+      await addPromptNote({ title: title.trim(), description: description.trim() });
+      setToast({ message: 'Nota atualizada!', type: 'success' });
+      setEditingNoteId(null);
+    } catch (err: any) {
+      setToast({ message: 'Erro ao atualizar nota: ' + err.message, type: 'error' });
+    }
   };
 
   const deleteNote = async (note: PromptNote) => {
     const confirmed = await showConfirm('Excluir nota', `Excluir nota "${note.title}"?`);
     if (!confirmed) return;
+    setDeletingNoteId(note.id);
     try {
-      const updated = aiPromptNotes.filter(n => n.id !== note.id);
-      setAiPromptNotes(updated);
-      await saveNotesToDB(updated);
+      await deletePromptNote(note.id);
       setToast({ message: 'Nota excluída', type: 'info' });
-      refreshData();
     } catch (err: any) {
       setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
+    } finally {
+      setDeletingNoteId(null);
     }
   };
 
@@ -541,8 +542,12 @@ function SettingsContent() {
                 <textarea className={`${inputBase} resize-y`} rows={3} value={noteForm.description} onChange={e => setNoteForm({ ...noteForm, description: e.target.value })} placeholder="Ex: Se for transação para fulano, título deve ser 'Barbearia'." />
               </div>
               <div className="flex gap-2">
-                <button onClick={saveNote} className={btnPrimary}><i className="bi bi-check-lg" /> Salvar</button>
-                <button onClick={clearNoteForm} className={btnSecondary}><i className="bi bi-x-lg" /> Limpar</button>
+                <button onClick={saveNote} disabled={isSavingNote} className={`${btnPrimary} disabled:opacity-60 disabled:cursor-not-allowed`}>
+                  {isSavingNote
+                    ? <><span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Salvando...</>
+                    : <><i className="bi bi-check-lg" /> Salvar</>}
+                </button>
+                <button onClick={clearNoteForm} disabled={isSavingNote} className={`${btnSecondary} disabled:opacity-60 disabled:cursor-not-allowed`}><i className="bi bi-x-lg" /> Limpar</button>
               </div>
             </div>
 
@@ -566,8 +571,22 @@ function SettingsContent() {
                         <div className="mb-1.5 flex items-center justify-between w-full">
                           <strong className="text-[13px]">{note.title}</strong>
                           <div className="flex gap-1.5">
-                            <button onClick={() => startEditNote(note)} className={btnIconSm}><i className="bi bi-pencil" /></button>
-                            <button onClick={() => deleteNote(note)} className={btnDangerSm}><i className="bi bi-trash" /></button>
+                            <button
+                              onClick={() => startEditNote(note)}
+                              disabled={deletingNoteId === note.id}
+                              className={`${btnIconSm} disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                              <i className="bi bi-pencil" />
+                            </button>
+                            <button
+                              onClick={() => deleteNote(note)}
+                              disabled={deletingNoteId === note.id}
+                              className={`${btnDangerSm} disabled:opacity-60 disabled:cursor-not-allowed`}
+                            >
+                              {deletingNoteId === note.id
+                                ? <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+                                : <i className="bi bi-trash" />}
+                            </button>
                           </div>
                         </div>
                         <p className="whitespace-pre-wrap text-[13px] text-zinc-500">{note.description}</p>
