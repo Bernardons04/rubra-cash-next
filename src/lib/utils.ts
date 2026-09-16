@@ -5,7 +5,7 @@ export const PREDEFINED_CATEGORIES: Record<string, string[]> = {
   'Alimentação': ['Restaurante', 'Delivery', 'Mercado', 'Padaria', 'Café'],
   'Transporte': ['Aplicativos de mobilidade', 'Estacionamento e pedágio', 'Manutenção do carro', 'Transporte público'],
   'Saúde': ['Farmácia', 'Consulta', 'Dentista', 'Oftalmologista', 'Exame', 'Plano de saúde'],
-  'Fitness': ['Academia', 'Personal Trainer', 'Yoga', 'Pilates'],
+  'Fitness': ['Academia', 'Personal Trainer', 'Yoga', 'Pilates', 'Suplementação', 'Equipamentos'],
   'Beleza': ['Cabelo', 'Unhas', 'Esteticista', 'Barbearia', 'Produtos'],
   'Educação': ['Curso', 'Livros', 'Faculdade', 'Idiomas', 'Certificação'],
   'Trabalho': ['Ferramentas', 'Software', 'Treinamento', 'Associação'],
@@ -29,7 +29,7 @@ export function calcBalance(accountId: string, account: Account, transactions: T
   let delta = 0;
   transactions.forEach(tx => {
     if (!tx.date || tx.date <= account.anchorDate) return;
-    
+
     if (tx.accountId === accountId) {
       if (tx.type === 'income') delta += tx.amount;
       else if (tx.type === 'expense') delta -= tx.amount;
