@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 export default function TransactionsPage() {
   const router = useRouter();
   const { theme, setToast, session, showConfirm, showAlert } = useUI();
-  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsBatch, bulkUpdateTransactions } = useData();
+  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsBatch, saveTransactionsBatch, bulkUpdateTransactions } = useData();
 
   const currentUser = session?.user;
 
