@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 export default function TransactionsPage() {
   const router = useRouter();
   const { theme, setToast, session, showConfirm } = useUI();
-  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData } = useData();
+  const { transactions, accounts, customCategories, aiPromptNotes, aiSettings, refreshData, setTransactions, loadingData, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsBatch } = useData();
 
   const currentUser = session?.user;
 
@@ -156,53 +156,26 @@ export default function TransactionsPage() {
       counterpartAccountId: f.type === 'transfer' ? (f.counterpartAccountId || '') : '',
     };
 
-    let newTxs = [...transactions];
-    if (editingTx) {
-      newTxs = newTxs.map(t => t.id === txId ? newTx : t);
-    } else {
-      newTxs.push(newTx);
-    }
-    setTransactions(newTxs);
-
-    if (currentUser) {
-      const payload = {
-        title: newTx.title, amount: newTx.amount, type: newTx.type, date: newTx.date,
-        category: newTx.category, subcategory: newTx.subcategory || null, method: newTx.method,
-        account_id: newTx.accountId || null, 
-        direction: newTx.direction || null, 
-        counterpart_account_id: newTx.counterpartAccountId || null,
-        user_id: currentUser.id
-      };
-      try {
-        if (editingTx) {
-          const { error } = await supabaseBrowser.from('transactions').update(payload).eq('id', newTx.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabaseBrowser.from('transactions').insert({ ...payload, id: newTx.id });
-          if (error) throw error;
-        }
-        setToast({ message: editingTx ? 'Transação atualizada!' : 'Transação adicionada!', type: 'success' });
-      } catch (err: any) {
-        setToast({ message: 'Erro ao salvar: ' + err.message, type: 'error' });
-        if (!editingTx) setTransactions(transactions.filter(t => t.id !== newTx.id));
-        return;
+    try {
+      if (editingTx) {
+        await updateTransaction(newTx);
+        setToast({ message: 'Transação atualizada!', type: 'success' });
+      } else {
+        await addTransaction(newTx);
+        setToast({ message: 'Transação adicionada!', type: 'success' });
       }
-    } else {
-      setToast({ message: editingTx ? 'Transação atualizada!' : 'Transação adicionada!', type: 'success' });
+    } catch (err: any) {
+      setToast({ message: 'Erro ao salvar: ' + err.message, type: 'error' });
+      return;
     }
     setShowTxModal(false);
-    refreshData();
   };
 
   const deleteTx = async (tx: Transaction) => {
     const confirmed = await showConfirm('Deletar transação', `Excluir "${tx.title}"?`);
     if (!confirmed) return;
     try {
-      setTransactions(transactions.filter(t => t.id !== tx.id));
-      if (currentUser) {
-        const { error } = await supabaseBrowser.from('transactions').delete().eq('id', tx.id);
-        if (error) { setToast({ message: 'Erro ao excluir: ' + error.message, type: 'error' }); return; }
-      }
+      await deleteTransaction(tx.id);
       setToast({ message: 'Transação removida', type: 'info' });
     } catch (err: any) {
       setToast({ message: 'Erro ao excluir: ' + err.message, type: 'error' });
@@ -242,13 +215,13 @@ export default function TransactionsPage() {
     if (!n) return;
     const confirmed = await showConfirm('Excluir em lote', `Excluir ${n} transação${n !== 1 ? 's' : ''}?`);
     if (!confirmed) return;
-    setTransactions(transactions.filter(t => !selectedIds.includes(t.id)));
-    if (currentUser) {
-      const { error } = await supabaseBrowser.from('transactions').delete().in('id', selectedIds);
-      if (error) { setToast({ message: 'Erro ao excluir: ' + error.message, type: 'error' }); return; }
+    try {
+      await deleteTransactionsBatch(selectedIds);
+      exitSelectionMode();
+      setToast({ message: `${n} transações excluídas`, type: 'info' });
+    } catch (err: any) {
+      setToast({ message: 'Erro ao excluir em lote: ' + err.message, type: 'error' });
     }
-    exitSelectionMode();
-    setToast({ message: `${n} transações excluídas`, type: 'info' });
   };
 
   const openBulkEdit = () => {
